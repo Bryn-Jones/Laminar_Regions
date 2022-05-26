@@ -6,8 +6,8 @@ def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_trailin
 
     node_connectivity = initialise_node_connectivity(su2_mesh_filepath,wing_marker_tag)
 
-    #Find leading edge
-    a_star_search(root_leading_edge_ID,tip_leading_edge_ID,node_connectivity)
+    #Find leading/trailing edges
+    leading_edge = a_star_search(root_leading_edge_ID,tip_leading_edge_ID,node_connectivity)
 
     return relative_chord, which_region
 
@@ -46,20 +46,20 @@ def a_star_search(start_node,target_node,node_connectivity):
     node_score = [1E10]*len(node_connectivity)
     node_score[start_node] = 0
 
-    def breadth_search(node_list,node_connectivity,node_score,blacklist):
+    def breadth_search(node_list,node_connectivity,node_score,blacklist,target_node):
 
         if node_list == []:
             return node_score
 
-        whitelist = []
+        whitelist = set()
 
         for which_node in node_list:
             for element in node_connectivity[which_node]:
                 if element not in whitelist and element not in blacklist:
-                    whitelist.append(element)
+                    whitelist.add(element)
                 if node_score[element] > node_score[which_node]+1:
                     node_score[element] = node_score[which_node]+1
-            blacklist.append(which_node)
+            blacklist.add(which_node)
 
         new_node_list = []
 
@@ -67,11 +67,27 @@ def a_star_search(start_node,target_node,node_connectivity):
             if element not in blacklist:
                 new_node_list.append(element)
 
-        node_score = breadth_search(new_node_list,node_connectivity,node_score,blacklist)
+        if target_node not in node_list:
+            node_score = breadth_search(new_node_list,node_connectivity,node_score,blacklist,target_node)
 
         return node_score
 
-    node_score = breadth_search([start_node],node_connectivity,node_score,[])
-    print(node_score)
+    node_score = breadth_search([start_node],node_connectivity,node_score,set(),target_node)
+
+    current_score = node_score[target_node]
+
+    def get_optimal_path(current_score,current_node,node_connectivity,node_score,optimal_path):
+
+        for element in node_connectivity[current_node]:
+            if node_score[element] == 0:
+                return [element]
+            elif node_score[element] == current_score-1:
+                optimal_path = get_optimal_path(current_score-1,element,node_connectivity,node_score,optimal_path)
+                optimal_path.append(element)
+
+        return optimal_path
+
+    optimal_path = get_optimal_path(current_score,target_node,node_connectivity,node_score,[target_node])
+    optimal_path.append(target_node)
 
     return optimal_path
