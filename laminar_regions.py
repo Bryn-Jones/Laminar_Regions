@@ -20,16 +20,22 @@ def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_t
     print('Separated upper and lower surfaces')
 
     #Find leading/trailing edges
-    leading_edge = a_star_search(root_leading_edge_ID,tip_leading_edge_ID,node_connectivity,position_data)
+    leading_edge = a_star_search(root_leading_edge_ID,tip_leading_edge_ID,node_connectivity,position_data,upper_lower_direction,-lower_surface_direction,upper_lower_boundary,set())
     print('Found leading edge')
-    trailing_edge = a_star_search(root_lower_trailing_edge_ID,tip_lower_trailing_edge_ID,node_connectivity,position_data)
-    print('Found trailing edge')
+    trailing_edge_lower = a_star_search(root_lower_trailing_edge_ID,tip_lower_trailing_edge_ID,node_connectivity,position_data,upper_lower_direction,lower_surface_direction,upper_lower_boundary,set())
+    print('Found lower trailing edge')
+    trailing_edge_upper = a_star_search(root_upper_trailing_edge_ID,tip_upper_trailing_edge_ID,node_connectivity,position_data,upper_lower_direction,-lower_surface_direction,upper_lower_boundary,set(trailing_edge_lower))
+    print('Found upper trailing edge')
 
     print('leading edge length: '+str(len(leading_edge)))
-    print('trailing edge length: '+str(len(trailing_edge)))
+    print('lower trailing edge length: '+str(len(trailing_edge_lower)))
+    print('upper trailing edge length: '+str(len(trailing_edge_upper)))
 
     np.savetxt('leading_edge.csv', position_data[leading_edge,:], delimiter=',')
-    np.savetxt('trailing_edge.csv', position_data[trailing_edge,:], delimiter=',')
+    np.savetxt('trailing_edge_lower.csv', position_data[trailing_edge_lower,:], delimiter=',')
+    np.savetxt('trailing_edge_upper.csv', position_data[trailing_edge_upper,:], delimiter=',')
+
+
 
     return relative_chord, which_region
 
@@ -63,7 +69,7 @@ def initialise_node_connectivity(su2_mesh_filepath,wing_marker_tag):
 
     return node_connectivity, max_node_num
 
-def a_star_search(start_node,target_node,node_connectivity,position_data):
+def a_star_search(start_node,target_node,node_connectivity,position_data,upper_lower_direction,correct_direction,upper_lower_boundary,blacklist):
 
     node_score = [1E10]*len(node_connectivity)
     node_score[start_node] = 0
@@ -77,7 +83,8 @@ def a_star_search(start_node,target_node,node_connectivity,position_data):
 
         for which_node in node_list:
             for element in node_connectivity[which_node]:
-                if element not in whitelist and element not in blacklist:
+                which_direction = (np.dot(upper_lower_direction,position_data[element,:])-upper_lower_boundary)*correct_direction
+                if element not in whitelist and element not in blacklist and which_direction > -0.005:
                     whitelist.add(element)
                 if node_score[element] > node_score[which_node]+1:
                     node_score[element] = node_score[which_node]+1
@@ -93,7 +100,7 @@ def a_star_search(start_node,target_node,node_connectivity,position_data):
 
         return node_score
 
-    node_score = breadth_search([start_node],node_connectivity,node_score,set(),target_node)
+    node_score = breadth_search([start_node],node_connectivity,node_score,blacklist,target_node)
 
     current_score = node_score[target_node]
 
@@ -143,7 +150,7 @@ def initialise_position_data(su2_mesh_filepath,max_node_num=1E10):
         mesh_data = re.split('\n',mesh_data[1])
         number_of_elements = int(mesh_data[0])
         if max_node_num < number_of_elements:
-            number_of_elements = int(max_node_num)
+            number_of_elements = int(max_node_num)+1
 
         #Parse "edge list", i.e. list of elements by node
         pos_list = np.zeros((number_of_elements,3))
