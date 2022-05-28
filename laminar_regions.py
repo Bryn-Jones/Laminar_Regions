@@ -35,6 +35,14 @@ def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_t
     np.savetxt('trailing_edge_lower.csv', position_data[trailing_edge_lower,:], delimiter=',')
     np.savetxt('trailing_edge_upper.csv', position_data[trailing_edge_upper,:], delimiter=',')
 
+    leading_edge_spatial_length = path_spatial_length(leading_edge,position_data)
+    trailing_edge_lower_spatial_length = path_spatial_length(trailing_edge_lower,position_data)
+    trailing_edge_upper_spatial_length = path_spatial_length(trailing_edge_upper,position_data)
+
+    print('leading edge spatial length: '+str(leading_edge_spatial_length[-1]))
+    print('trailing edge lower spatial length: '+str(trailing_edge_lower_spatial_length[-1]))
+    print('trailing edge upper spatial length: '+str(trailing_edge_upper_spatial_length[-1]))
+
 
 
     return relative_chord, which_region
@@ -184,3 +192,12 @@ def rect_norm(input_points):
     plane_origin = np.dot(mean_norm,np.mean(input_points,axis=0))
 
     return mean_norm, plane_origin
+
+def path_spatial_length(path,position_data):
+
+    path_cumsum = np.zeros((len(path)))
+
+    for a in range(len(path)-1):
+        path_cumsum[a+1] = np.linalg.norm(position_data[path[a+1],:] - position_data[path[a],:]) + path_cumsum[a]
+
+    return path_cumsum
