@@ -1,3 +1,6 @@
 *pycache*
 *.csv
 *.su2
+*.png
+*.vtu
+*.txt
