@@ -3,7 +3,7 @@ import re
 import numpy as np
 from scipy.interpolate import CubicSpline
 
-def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_trailing_edge_ID,tip_lower_trailing_edge_ID,root_upper_trailing_edge_ID,tip_upper_trailing_edge_ID,wing_marker_tag,span_direction,chord_direction,max_nlf,efficacy,banned_span):
+def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_trailing_edge_ID,tip_lower_trailing_edge_ID,root_upper_trailing_edge_ID,tip_upper_trailing_edge_ID,wing_marker_tag,span_direction,chord_direction,max_nlf_lower,max_nlf_upper,efficacy,banned_span):
 
     node_connectivity, max_node_num = initialise_node_connectivity(su2_mesh_filepath,wing_marker_tag)
 
@@ -66,8 +66,8 @@ def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_t
     # trailing_edge_lower_percent_chord = trailing_edge_lower_span_length/trailing_edge_lower_span_length[-1]
     # trailing_edge_upper_percent_chord = trailing_edge_upper_span_length/trailing_edge_upper_span_length[-1]
 
-    lower_surface = process_laminarity(leading_edge,trailing_edge_lower,node_connectivity,position_data,upper_lower_direction,lower_surface_direction,upper_lower_boundary,span_direction,chord_direction,leading_span,max_nlf,banned_span,efficacy,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_lower_spline)
-    upper_surface = process_laminarity(leading_edge,trailing_edge_upper,node_connectivity,position_data,upper_lower_direction,-lower_surface_direction,upper_lower_boundary,span_direction,chord_direction,leading_span,max_nlf,banned_span,efficacy,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_upper_spline)
+    lower_surface = process_laminarity(leading_edge,trailing_edge_lower,node_connectivity,position_data,upper_lower_direction,lower_surface_direction,upper_lower_boundary,span_direction,chord_direction,leading_span,max_nlf_lower,banned_span,efficacy,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_lower_spline)
+    upper_surface = process_laminarity(leading_edge,trailing_edge_upper,node_connectivity,position_data,upper_lower_direction,-lower_surface_direction,upper_lower_boundary,span_direction,chord_direction,leading_span,max_nlf_upper,banned_span,efficacy,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_upper_spline)
 
     print('generated all laminarity metadata')
 
@@ -287,4 +287,4 @@ banned_span[1,:] = [0.2,0.25]
 banned_span[2,:] = [0.455,0.48]
 banned_span[3,:] = [0.96,1]
 
-main('C:/[redacted]/Laminar_Regions/mrsbw-V-BASE-newBL.su2',1,136218,4,136222,22500,158565,'wing',[0,1,0],[1,0,0],0.6,0.5,banned_span)
+main('C:/[redacted]/Laminar_Regions/mrsbw-V-BASE-newBL.su2',1,136218,4,136222,22500,158565,'wing',[0,1,0],[1,0,0],0.6321,0.6739,0,banned_span)
