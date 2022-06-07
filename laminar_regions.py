@@ -3,38 +3,69 @@ import re
 import numpy as np
 from scipy.interpolate import CubicSpline
 
-def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_trailing_edge_ID,tip_lower_trailing_edge_ID,root_upper_trailing_edge_ID,tip_upper_trailing_edge_ID,wing_marker_tag,span_direction,chord_direction,max_nlf_lower,max_nlf_upper,efficacy,banned_span):
+def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_trailing_edge_ID,tip_lower_trailing_edge_ID,root_upper_trailing_edge_ID,tip_upper_trailing_edge_ID,wing_marker_tag,span_direction,chord_direction,max_nlf_lower,max_nlf_upper,efficacy,banned_span,get_paths_from_csv,get_pos_from_csv):
 
     node_connectivity, max_node_num = initialise_node_connectivity(su2_mesh_filepath,wing_marker_tag)
 
-    #Generate nodal position data
-    position_data = initialise_position_data(su2_mesh_filepath,max_node_num)
+    if get_pos_from_csv:
+        position_data = np.genfromtxt('position_data.csv', delimiter=',')
+    else:
+        #Generate nodal position data
+        position_data = initialise_position_data(su2_mesh_filepath,max_node_num)
+        np.savetxt('position_data.csv', position_data, delimiter=',')
+
     print('got position data')
 
-    mean_trailing_edge_root = np.mean(position_data[(root_lower_trailing_edge_ID,root_upper_trailing_edge_ID),:],axis=0)
-    mean_trailing_edge_tip = np.mean(position_data[(tip_lower_trailing_edge_ID,tip_upper_trailing_edge_ID),:],axis=0)
+    if get_paths_from_csv:
+        lower_pathlist = read_csv_as_list('lower_nodes.csv')
+        upper_pathlist = read_csv_as_list('upper_nodes.csv')
 
-    upper_lower_direction, upper_lower_boundary = rect_norm([mean_trailing_edge_root,mean_trailing_edge_tip,position_data[tip_leading_edge_ID,:],position_data[root_leading_edge_ID,:]])
+        leading_edge = np.genfromtxt('leading_edge.csv', delimiter=',', dtype=int)
+        trailing_edge_lower = np.genfromtxt('trailing_edge_lower.csv', delimiter=',', dtype=int)
+        trailing_edge_upper = np.genfromtxt('trailing_edge_upper.csv', delimiter=',', dtype=int)
 
-    lower_surface_direction = np.dot(upper_lower_direction,position_data[root_lower_trailing_edge_ID]) - upper_lower_boundary
-    lower_surface_direction = lower_surface_direction / abs(lower_surface_direction)
-    print('separated upper and lower surfaces')
+        print('loaded paths from file')
+    else:
+        mean_trailing_edge_root = np.mean(position_data[(root_lower_trailing_edge_ID,root_upper_trailing_edge_ID),:],axis=0)
+        mean_trailing_edge_tip = np.mean(position_data[(tip_lower_trailing_edge_ID,tip_upper_trailing_edge_ID),:],axis=0)
 
-    #Find leading/trailing edges
-    leading_edge = a_star_search(root_leading_edge_ID,tip_leading_edge_ID,node_connectivity,position_data,upper_lower_direction,-lower_surface_direction,upper_lower_boundary,set())
-    print('found leading edge')
-    trailing_edge_lower = a_star_search(root_lower_trailing_edge_ID,tip_lower_trailing_edge_ID,node_connectivity,position_data,upper_lower_direction,lower_surface_direction,upper_lower_boundary,set())
-    print('found lower trailing edge')
-    trailing_edge_upper = a_star_search(root_upper_trailing_edge_ID,tip_upper_trailing_edge_ID,node_connectivity,position_data,upper_lower_direction,-lower_surface_direction,upper_lower_boundary,set(trailing_edge_lower))
-    print('found upper trailing edge')
+        upper_lower_direction, upper_lower_boundary = rect_norm([mean_trailing_edge_root,mean_trailing_edge_tip,position_data[tip_leading_edge_ID,:],position_data[root_leading_edge_ID,:]])
 
-    print('leading edge length: '+str(len(leading_edge)))
-    print('lower trailing edge length: '+str(len(trailing_edge_lower)))
-    print('upper trailing edge length: '+str(len(trailing_edge_upper)))
+        lower_surface_direction = np.dot(upper_lower_direction,position_data[root_lower_trailing_edge_ID]) - upper_lower_boundary
+        lower_surface_direction = lower_surface_direction / abs(lower_surface_direction)
+        print('separated upper and lower surfaces')
 
-    np.savetxt('leading_edge.csv', position_data[leading_edge,:], delimiter=',')
-    np.savetxt('trailing_edge_lower.csv', position_data[trailing_edge_lower,:], delimiter=',')
-    np.savetxt('trailing_edge_upper.csv', position_data[trailing_edge_upper,:], delimiter=',')
+        #Find leading/trailing edges
+        leading_edge = a_star_search(root_leading_edge_ID,tip_leading_edge_ID,node_connectivity,position_data,upper_lower_direction,-lower_surface_direction,upper_lower_boundary,set())
+        print('found leading edge')
+        trailing_edge_lower = a_star_search(root_lower_trailing_edge_ID,tip_lower_trailing_edge_ID,node_connectivity,position_data,upper_lower_direction,lower_surface_direction,upper_lower_boundary,set())
+        print('found lower trailing edge')
+        trailing_edge_upper = a_star_search(root_upper_trailing_edge_ID,tip_upper_trailing_edge_ID,node_connectivity,position_data,upper_lower_direction,-lower_surface_direction,upper_lower_boundary,set(trailing_edge_lower))
+        print('found upper trailing edge')
+
+        print('leading edge length: '+str(len(leading_edge)))
+        print('lower trailing edge length: '+str(len(trailing_edge_lower)))
+        print('upper trailing edge length: '+str(len(trailing_edge_upper)))
+
+        np.savetxt('leading_edge.csv', leading_edge, delimiter=',')
+        np.savetxt('trailing_edge_lower.csv', trailing_edge_lower, delimiter=',')
+        np.savetxt('trailing_edge_upper.csv', trailing_edge_upper, delimiter=',')
+
+        lower_pathlist = get_surface_path_list(leading_edge,trailing_edge_lower,node_connectivity,position_data,upper_lower_direction,lower_surface_direction,upper_lower_boundary)
+        upper_pathlist = get_surface_path_list(leading_edge,trailing_edge_lower,node_connectivity,position_data,upper_lower_direction,-lower_surface_direction,upper_lower_boundary)
+
+        print('got lower/upper surface full node list')
+
+        save_list_as_csv(lower_pathlist,'lower_nodes.csv')
+        save_list_as_csv(upper_pathlist,'upper_nodes.csv')
+
+    # print('Lower pathlist lengths')
+    # for a in range(len(lower_pathlist)):
+    #     print(len(lower_pathlist[a]))
+    #
+    # print('Upper pathlist lengths')
+    # for a in range(len(upper_pathlist)):
+    #     print(len(upper_pathlist[a]))
 
     leading_edge_span_length = path_spatial_length(leading_edge,position_data,span_direction)
     trailing_edge_lower_span_length = path_spatial_length(trailing_edge_lower,position_data,span_direction)
@@ -66,8 +97,8 @@ def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_t
     # trailing_edge_lower_percent_chord = trailing_edge_lower_span_length/trailing_edge_lower_span_length[-1]
     # trailing_edge_upper_percent_chord = trailing_edge_upper_span_length/trailing_edge_upper_span_length[-1]
 
-    lower_surface = process_laminarity(leading_edge,trailing_edge_lower,node_connectivity,position_data,upper_lower_direction,lower_surface_direction,upper_lower_boundary,span_direction,chord_direction,leading_span,max_nlf_lower,banned_span,efficacy,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_lower_spline)
-    upper_surface = process_laminarity(leading_edge,trailing_edge_upper,node_connectivity,position_data,upper_lower_direction,-lower_surface_direction,upper_lower_boundary,span_direction,chord_direction,leading_span,max_nlf_upper,banned_span,efficacy,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_upper_spline)
+    lower_surface = process_laminarity(leading_edge,trailing_edge_lower,position_data,span_direction,chord_direction,leading_span,max_nlf_lower,banned_span,efficacy,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_lower_spline,lower_pathlist)
+    upper_surface = process_laminarity(leading_edge,trailing_edge_upper,position_data,span_direction,chord_direction,leading_span,max_nlf_upper,banned_span,efficacy,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_upper_spline,upper_pathlist)
 
     print('generated all laminarity metadata')
 
@@ -235,19 +266,15 @@ def path_spatial_length(path,position_data,direction):
 
     return path_length
 
-def process_laminarity(leading_edge,trailing_edge,node_connectivity,position_data,upper_lower_direction,lower_surface_direction,upper_lower_boundary,span_direction,chord_direction,leading_span,max_nlf,banned_span,efficacy,max_node_num,root_span,leading_edge_spline,trailing_edge_spline):
-    laminar_data = [[] for _ in range(len(leading_edge))]
+def process_laminarity(leading_edge,trailing_edge,position_data,span_direction,chord_direction,leading_span,max_nlf,banned_span,efficacy,max_node_num,root_span,leading_edge_spline,trailing_edge_spline,node_list):
 
     output_data = np.zeros((int(max_node_num),8))
     counter = 0
 
-    for a in range(np.min([len(leading_edge),len(trailing_edge)])):
+    for a in range(len(node_list)):
+        for b in range(len(node_list[a])):
 
-        laminar_data[a] = a_star_search(leading_edge[a],trailing_edge[a],node_connectivity,position_data,upper_lower_direction,-lower_surface_direction,upper_lower_boundary,set())
-
-        for b in range(len(laminar_data[a])):
-
-            current_pos = position_data[laminar_data[a][b]]
+            current_pos = position_data[int(node_list[a][b]),:]
             current_span = np.dot(current_pos,span_direction)
             current_chord = np.dot(current_pos,chord_direction)
 
@@ -269,17 +296,57 @@ def process_laminarity(leading_edge,trailing_edge,node_connectivity,position_dat
             else:
                 laminar_or_not = 0
 
-            output_data[counter,0] = laminar_data[a][b]
+            output_data[counter,0] = node_list[a][b]
             output_data[counter,1] = percent_span
             output_data[counter,2] = percent_chord
             output_data[counter,3] = current_efficacy
             output_data[counter,4] = laminar_or_not
-            output_data[counter,5:8] = position_data[laminar_data[a][b]]
+            output_data[counter,5:8] = current_pos
             counter += 1
 
     output_data = output_data[~np.all(output_data == 0, axis=1)]
 
     return output_data
+
+def get_surface_path_list(leading_edge,trailing_edge,node_connectivity,position_data,upper_lower_direction,lower_surface_direction,upper_lower_boundary):
+    surface_paths = [[] for _ in range(len(leading_edge))]
+
+    for a in range(np.min([len(leading_edge),len(trailing_edge)])):
+        surface_paths[a] = a_star_search(leading_edge[a],trailing_edge[a],node_connectivity,position_data,upper_lower_direction,-lower_surface_direction,upper_lower_boundary,set())
+
+    return surface_paths
+
+def save_list_as_csv(the_list,the_filepath):
+
+    the_file = open(the_filepath,'w')
+
+    for a in range(len(the_list)):
+        for b in range(len(the_list[a])):
+            the_file.write(str(the_list[a][b]))
+
+            if b < (len(the_list[a])-1):
+                the_file.write(',')
+            elif a < (len(the_list)-1):
+                the_file.write('\n')
+
+    the_file.close()
+
+    return
+
+def read_csv_as_list(the_filepath):
+
+    the_file = open(the_filepath,'r')
+    file_data = the_file.read()
+    the_file.close()
+
+    file_data = re.split('\n',file_data)
+
+    the_list = [[] for _ in range(len(file_data))]
+
+    for a in range(len(file_data)):
+        the_list[a] = re.split(',',file_data[a])
+
+    return the_list
 
 banned_span = np.zeros((4,2))
 banned_span[0,:] = [0.,0.03]
@@ -287,4 +354,4 @@ banned_span[1,:] = [0.2,0.25]
 banned_span[2,:] = [0.455,0.48]
 banned_span[3,:] = [0.96,1]
 
-main('C:/[redacted]/Laminar_Regions/mrsbw-V-BASE-newBL.su2',1,136218,4,136222,22500,158565,'wing',[0,1,0],[1,0,0],0.6321,0.6739,0,banned_span)
+main('C:/[redacted]/Laminar_Regions/mrsbw-V-BASE-newBL.su2',1,136218,4,136222,22500,158565,'wing',[0,1,0],[1,0,0],0.6321,0.6739,1,banned_span,True,True)
