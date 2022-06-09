@@ -3,12 +3,17 @@ import re
 import numpy as np
 from scipy.interpolate import CubicSpline
 
-def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_trailing_edge_ID,tip_lower_trailing_edge_ID,root_upper_trailing_edge_ID,tip_upper_trailing_edge_ID,wing_marker_tag,span_direction,chord_direction,max_nlf_lower,max_nlf_upper,efficacy,banned_span,get_paths_from_csv,get_pos_from_csv):
+def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_trailing_edge_ID,tip_lower_trailing_edge_ID,root_upper_trailing_edge_ID,tip_upper_trailing_edge_ID,wing_marker_tag,span_direction,chord_direction,max_nlf_lower,max_nlf_upper,efficiency,banned_span,get_paths_from_csv,get_pos_from_csv,correction_efficiencies,razor_filename):
 
-    node_connectivity, max_node_num = initialise_node_connectivity(su2_mesh_filepath,wing_marker_tag)
+    node_connectivity, max_node_num, edge_list, number_of_elements = initialise_node_connectivity(su2_mesh_filepath,wing_marker_tag)
+
+    razor_data = np.genfromtxt(razor_filename, delimiter=',')
+    if all(np.isnan(razor_data[0,:])):
+        razor_data = np.delete(razor_data,0,axis=0)
 
     if get_pos_from_csv:
-        position_data = np.genfromtxt('position_data.csv', delimiter=',')
+        position_data = razor_data[:,1:4]
+        #position_data = np.genfromtxt('position_data.csv', delimiter=',')
     else:
         #Generate nodal position data
         position_data = initialise_position_data(su2_mesh_filepath,max_node_num)
@@ -97,8 +102,12 @@ def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_t
     # trailing_edge_lower_percent_chord = trailing_edge_lower_span_length/trailing_edge_lower_span_length[-1]
     # trailing_edge_upper_percent_chord = trailing_edge_upper_span_length/trailing_edge_upper_span_length[-1]
 
-    lower_surface = process_laminarity(leading_edge,trailing_edge_lower,position_data,span_direction,chord_direction,leading_span,max_nlf_lower,banned_span,efficacy,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_lower_spline,lower_pathlist)
-    upper_surface = process_laminarity(leading_edge,trailing_edge_upper,position_data,span_direction,chord_direction,leading_span,max_nlf_upper,banned_span,efficacy,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_upper_spline,upper_pathlist)
+    correction_spline_list = read_chordwise_corrections('laminar_distribution.csv')
+
+    print('created correction splines')
+
+    lower_surface = process_laminarity(leading_edge,trailing_edge_lower,razor_data,span_direction,chord_direction,leading_span,max_nlf_lower,banned_span,efficiency,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_lower_spline,lower_pathlist,correction_spline_list,correction_efficiencies)
+    upper_surface = process_laminarity(leading_edge,trailing_edge_upper,razor_data,span_direction,chord_direction,leading_span,max_nlf_upper,banned_span,efficiency,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_upper_spline,upper_pathlist,correction_spline_list,correction_efficiencies)
 
     print('generated all laminarity metadata')
 
@@ -106,6 +115,8 @@ def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_t
     np.savetxt('upper_surface.csv',upper_surface,delimiter=',')
 
     print('wrote data to csv files')
+
+    write_vtk_file('wing.vtk',position_data,max_node_num,edge_list,number_of_elements,[lower_surface,upper_surface])
 
     return
 
@@ -128,8 +139,8 @@ def initialise_node_connectivity(su2_mesh_filepath,wing_marker_tag):
             edge_list[a-2,b-1] = int(current_element[b])
 
     #Convert "edge list" to a connectivity list
-    max_node_num = np.max(edge_list)
-    node_connectivity = [[] for _ in range(int(max_node_num+1))]
+    max_node_num = int(np.max(edge_list))
+    node_connectivity = [[] for _ in range(max_node_num+1)]
     for a in range(number_of_elements):
         for b in range(3):
             for c in range(3):
@@ -137,7 +148,7 @@ def initialise_node_connectivity(su2_mesh_filepath,wing_marker_tag):
                     if edge_list[a,c] not in node_connectivity[int(edge_list[a,b])]:
                         node_connectivity[int(edge_list[a,b])].append(int(edge_list[a,c]))
 
-    return node_connectivity, max_node_num
+    return node_connectivity, max_node_num, edge_list, number_of_elements
 
 def a_star_search(start_node,target_node,node_connectivity,position_data,upper_lower_direction,correct_direction,upper_lower_boundary,blacklist):
 
@@ -221,7 +232,7 @@ def initialise_position_data(su2_mesh_filepath,max_node_num=1E10):
         mesh_data = re.split('\n',mesh_data[1])
         number_of_elements = int(mesh_data[0])
         if max_node_num < number_of_elements:
-            number_of_elements = int(max_node_num)+1
+            number_of_elements = max_node_num+1
 
         #Parse "edge list", i.e. list of elements by node
         pos_list = np.zeros((number_of_elements,3))
@@ -266,15 +277,15 @@ def path_spatial_length(path,position_data,direction):
 
     return path_length
 
-def process_laminarity(leading_edge,trailing_edge,position_data,span_direction,chord_direction,leading_span,max_nlf,banned_span,efficacy,max_node_num,root_span,leading_edge_spline,trailing_edge_spline,node_list):
+def process_laminarity(leading_edge,trailing_edge,razor_data,span_direction,chord_direction,leading_span,max_nlf,banned_span,efficiency,max_node_num,root_span,leading_edge_spline,trailing_edge_spline,node_list,correction_spline_list,correction_efficiencies):
 
-    output_data = np.zeros((int(max_node_num),8))
+    output_data = np.zeros((max_node_num,9))
     counter = 0
 
     for a in range(len(node_list)):
         for b in range(len(node_list[a])):
 
-            current_pos = position_data[int(node_list[a][b]),:]
+            current_pos = razor_data[int(node_list[a][b]),1:4]
             current_span = np.dot(current_pos,span_direction)
             current_chord = np.dot(current_pos,chord_direction)
 
@@ -283,7 +294,9 @@ def process_laminarity(leading_edge,trailing_edge,position_data,span_direction,c
 
             percent_span = (current_span - root_span)/leading_span
             percent_chord = (current_chord - leading_chord) / (trailing_chord - leading_chord)
-            current_efficacy = percent_chord / max_nlf
+            current_efficiency = percent_chord / max_nlf
+
+            current_pressure = razor_data[int(node_list[a][b]),4]
 
             current_banned_span = False
             for c in range(len(banned_span[:,0])):
@@ -291,7 +304,16 @@ def process_laminarity(leading_edge,trailing_edge,position_data,span_direction,c
                     current_banned_span = True
                     break
 
-            if current_efficacy < efficacy and not current_banned_span:
+            if not current_banned_span:
+                corrections_list = []
+
+                for c in range(len(correction_spline_list)):
+                    corrections_list.append(correction_spline_list[c](percent_chord))
+
+                efficiency_spline = CubicSpline(correction_efficiencies, corrections_list, axis=0)
+                current_pressure = current_pressure*efficiency_spline(efficiency)
+
+            if current_efficiency < efficiency and not current_banned_span:
                 laminar_or_not = 1
             else:
                 laminar_or_not = 0
@@ -299,9 +321,10 @@ def process_laminarity(leading_edge,trailing_edge,position_data,span_direction,c
             output_data[counter,0] = node_list[a][b]
             output_data[counter,1] = percent_span
             output_data[counter,2] = percent_chord
-            output_data[counter,3] = current_efficacy
+            output_data[counter,3] = current_efficiency
             output_data[counter,4] = laminar_or_not
-            output_data[counter,5:8] = current_pos
+            output_data[counter,5] = current_pressure
+            output_data[counter,6:9] = current_pos
             counter += 1
 
     output_data = output_data[~np.all(output_data == 0, axis=1)]
@@ -348,10 +371,83 @@ def read_csv_as_list(the_filepath):
 
     return the_list
 
+def write_vtk_file(the_filepath,position_data,max_node_num,edge_list,number_of_elements,field_data):
+
+    the_file = open(the_filepath,'w')
+    the_file.write('# vtk DataFile Version 3.0\n')
+    the_file.write('vtk output\n')
+    the_file.write('ASCII\n')
+    the_file.write('DATASET UNSTRUCTURED_GRID\n')
+    the_file.write('POINTS '+str(max_node_num+1)+' float\n')
+
+    for a in range(max_node_num+1):
+        for b in range(len(position_data[a,:])):
+            the_file.write(str(position_data[a,b]))
+
+            if b < (len(position_data[a,:])-1):
+                the_file.write(' ')
+            else:
+                the_file.write('\n')
+
+    the_file.write('CELLS '+str(number_of_elements)+' '+str(number_of_elements*4)+'\n')
+
+    for a in range(number_of_elements):
+        the_file.write('3 ')
+        for b in range(len(edge_list[a,:])):
+            the_file.write(str(int(edge_list[a,b])))
+
+            if b < (len(edge_list[a,:])-1):
+                the_file.write(' ')
+            else:
+                the_file.write('\n')
+
+    the_file.write('CELL_TYPES '+str(number_of_elements)+'\n')
+
+    for a in range(number_of_elements):
+        the_file.write('5\n')
+
+    the_file.write('POINT_DATA '+str(max_node_num+1)+'\n')
+    the_file.write('FIELD FieldData 1\n')
+    the_file.write('Pressure 1 '+str(max_node_num+1)+' float\n')
+
+    pressure_list = np.zeros((max_node_num+1))
+
+    for a in range(len(field_data)):
+        for b in range(len(field_data[a][:,0])):
+            pressure_list[int(field_data[a][b,0])] = field_data[a][b,5]
+
+    for a in range(max_node_num+1):
+        the_file.write(str(pressure_list[a])+'\n')
+
+    return
+
+def read_chordwise_corrections(the_filepath):
+
+    corrections_data = np.genfromtxt(the_filepath, delimiter=',')
+    percent_correction = np.ones((len(corrections_data[:,0]),len(corrections_data[0,:])-1))
+
+    for a in range(len(corrections_data[0,:])-2):
+        percent_correction[:,a+1] = corrections_data[:,a+2]/corrections_data[:,1]
+
+    percent_correction[np.isnan(percent_correction)] = 1.
+
+    correction_spline_list = []
+
+    for a in range(len(percent_correction[0,:])):
+        correction_spline_list.append(CubicSpline(corrections_data[:,0], percent_correction[:,a], axis=0))
+
+    return correction_spline_list
+
 banned_span = np.zeros((4,2))
 banned_span[0,:] = [0.,0.03]
 banned_span[1,:] = [0.2,0.25]
 banned_span[2,:] = [0.455,0.48]
 banned_span[3,:] = [0.96,1]
 
-main('C:/[redacted]/Laminar_Regions/mrsbw-V-BASE-newBL.su2',1,136218,4,136222,22500,158565,'wing',[0,1,0],[1,0,0],0.6321,0.6739,1,banned_span,True,True)
+correction_efficiencies = [0,1]
+
+efficiency = 0.
+
+razor_filename = 'example_razor_input.csv'
+
+main('mrsbw-V-BASE-newBL.su2',1,136218,4,136222,22500,158565,'wing',[0,1,0],[1,0,0],0.6321,0.6739,efficiency,banned_span,True,True,correction_efficiencies,razor_filename)
