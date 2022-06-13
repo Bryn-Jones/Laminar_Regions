@@ -3,16 +3,16 @@ import re
 import numpy as np
 from scipy.interpolate import CubicSpline
 
-def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_trailing_edge_ID,tip_lower_trailing_edge_ID,root_upper_trailing_edge_ID,tip_upper_trailing_edge_ID,wing_marker_tag,span_direction,chord_direction,max_nlf_lower,max_nlf_upper,efficiency,banned_span,get_paths_from_csv,get_pos_from_csv,correction_efficiencies,razor_filename):
+def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_trailing_edge_ID,tip_lower_trailing_edge_ID,root_upper_trailing_edge_ID,tip_upper_trailing_edge_ID,wing_marker_tag,span_direction,chord_direction,max_nlf_lower,max_nlf_upper,efficiency,banned_span,get_paths_from_csv,get_pos_from_csv,correction_efficiencies,su2_filename):
 
     node_connectivity, max_node_num, edge_list, number_of_elements = initialise_node_connectivity(su2_mesh_filepath,wing_marker_tag)
 
-    razor_data = np.genfromtxt(razor_filename, delimiter=',')
-    if all(np.isnan(razor_data[0,:])):
-        razor_data = np.delete(razor_data,0,axis=0)
+    su2_data = np.genfromtxt(su2_filename, delimiter=',')
+    if all(np.isnan(su2_data[0,:])):
+        su2_data = np.delete(su2_data,0,axis=0)
 
     if get_pos_from_csv:
-        position_data = razor_data[:,1:4]
+        position_data = su2_data[:,1:4]
         #position_data = np.genfromtxt('position_data.csv', delimiter=',')
     else:
         #Generate nodal position data
@@ -64,6 +64,14 @@ def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_t
         save_list_as_csv(lower_pathlist,'lower_nodes.csv')
         save_list_as_csv(upper_pathlist,'upper_nodes.csv')
 
+    leftovers = np.zeros((max_node_num+1),dtype=int)
+    for row in lower_pathlist:
+        for element in row:
+            leftovers[int(element)] = 1
+    for row in upper_pathlist:
+        for element in row:
+            leftovers[int(element)] = 1
+
     # print('Lower pathlist lengths')
     # for a in range(len(lower_pathlist)):
     #     print(len(lower_pathlist[a]))
@@ -106,8 +114,9 @@ def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_t
 
     print('created correction splines')
 
-    lower_surface = process_laminarity(leading_edge,trailing_edge_lower,razor_data,span_direction,chord_direction,leading_span,max_nlf_lower,banned_span,efficiency,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_lower_spline,lower_pathlist,correction_spline_list,correction_efficiencies)
-    upper_surface = process_laminarity(leading_edge,trailing_edge_upper,razor_data,span_direction,chord_direction,leading_span,max_nlf_upper,banned_span,efficiency,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_upper_spline,upper_pathlist,correction_spline_list,correction_efficiencies)
+    lower_surface = process_laminarity(leading_edge,trailing_edge_lower,su2_data,span_direction,chord_direction,leading_span,max_nlf_lower,banned_span,efficiency,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_lower_spline,lower_pathlist,correction_spline_list,correction_efficiencies)
+    upper_surface = process_laminarity(leading_edge,trailing_edge_upper,su2_data,span_direction,chord_direction,leading_span,max_nlf_upper,banned_span,efficiency,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_upper_spline,upper_pathlist,correction_spline_list,correction_efficiencies)
+    leftover_surface = process_leftovers(leftovers,su2_data)
 
     print('generated all laminarity metadata')
 
@@ -116,7 +125,7 @@ def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_t
 
     print('wrote data to csv files')
 
-    write_vtk_file('wing.vtk',position_data,max_node_num,edge_list,number_of_elements,[lower_surface,upper_surface])
+    write_vtk_file('wing.vtk',position_data,max_node_num,edge_list,number_of_elements,[lower_surface,upper_surface,leftover_surface])
 
     return
 
@@ -277,15 +286,15 @@ def path_spatial_length(path,position_data,direction):
 
     return path_length
 
-def process_laminarity(leading_edge,trailing_edge,razor_data,span_direction,chord_direction,leading_span,max_nlf,banned_span,efficiency,max_node_num,root_span,leading_edge_spline,trailing_edge_spline,node_list,correction_spline_list,correction_efficiencies):
+def process_laminarity(leading_edge,trailing_edge,su2_data,span_direction,chord_direction,leading_span,max_nlf,banned_span,efficiency,max_node_num,root_span,leading_edge_spline,trailing_edge_spline,node_list,correction_spline_list,correction_efficiencies):
 
-    output_data = np.zeros((max_node_num,9))
+    output_data = np.zeros((max_node_num,12))
     counter = 0
 
     for a in range(len(node_list)):
         for b in range(len(node_list[a])):
 
-            current_pos = razor_data[int(node_list[a][b]),1:4]
+            current_pos = su2_data[int(node_list[a][b]),1:4]
             current_span = np.dot(current_pos,span_direction)
             current_chord = np.dot(current_pos,chord_direction)
 
@@ -296,7 +305,8 @@ def process_laminarity(leading_edge,trailing_edge,razor_data,span_direction,chor
             percent_chord = (current_chord - leading_chord) / (trailing_chord - leading_chord)
             current_efficiency = percent_chord / max_nlf
 
-            current_pressure = razor_data[int(node_list[a][b]),4]
+            current_pressure = su2_data[int(node_list[a][b]),13]
+            current_friction = su2_data[int(node_list[a][b]),15:18]
 
             current_banned_span = False
             for c in range(len(banned_span[:,0])):
@@ -304,7 +314,9 @@ def process_laminarity(leading_edge,trailing_edge,razor_data,span_direction,chor
                     current_banned_span = True
                     break
 
-            if not current_banned_span:
+            if current_efficiency < efficiency and not current_banned_span:
+                laminar_or_not = 1
+
                 corrections_list = []
 
                 for c in range(len(correction_spline_list)):
@@ -312,22 +324,36 @@ def process_laminarity(leading_edge,trailing_edge,razor_data,span_direction,chor
 
                 efficiency_spline = CubicSpline(correction_efficiencies, corrections_list, axis=0)
                 current_pressure = current_pressure*efficiency_spline(efficiency)
-
-            if current_efficiency < efficiency and not current_banned_span:
-                laminar_or_not = 1
+                current_friction = current_friction*efficiency_spline(efficiency)
             else:
                 laminar_or_not = 0
 
             output_data[counter,0] = node_list[a][b]
-            output_data[counter,1] = percent_span
-            output_data[counter,2] = percent_chord
-            output_data[counter,3] = current_efficiency
-            output_data[counter,4] = laminar_or_not
-            output_data[counter,5] = current_pressure
-            output_data[counter,6:9] = current_pos
+            output_data[counter,1:4] = current_pos
+            output_data[counter,4] = percent_span
+            output_data[counter,5] = percent_chord
+            output_data[counter,6] = current_efficiency
+            output_data[counter,7] = laminar_or_not
+            output_data[counter,8] = current_pressure
+            output_data[counter,9:12] = current_friction
             counter += 1
 
-    output_data = output_data[~np.all(output_data == 0, axis=1)]
+    output_data = output_data[not np.all(output_data == 0, axis=1)]
+
+    return output_data
+
+def process_leftovers(leftovers,su2_data,max_node_num):
+
+    output_data = np.zeros((max_node_num,12))
+
+    for a in range(len(leftovers)):
+        if leftovers[a] == 0:
+            output_data[a,0] = a
+            output_data[a,1:4] = su2_data[a,1:4]
+            output_data[a,8] = su2_data[a,13]
+            output_data[a,9:12] = su2_data[a,15:18]
+
+    output_data = output_data[not np.all(output_data == 0, axis=1)]
 
     return output_data
 
@@ -407,17 +433,33 @@ def write_vtk_file(the_filepath,position_data,max_node_num,edge_list,number_of_e
         the_file.write('5\n')
 
     the_file.write('POINT_DATA '+str(max_node_num+1)+'\n')
-    the_file.write('FIELD FieldData 1\n')
+    the_file.write('FIELD FieldData 2\n')
     the_file.write('Pressure 1 '+str(max_node_num+1)+' float\n')
 
     pressure_list = np.zeros((max_node_num+1))
 
     for a in range(len(field_data)):
         for b in range(len(field_data[a][:,0])):
-            pressure_list[int(field_data[a][b,0])] = field_data[a][b,5]
+            pressure_list[int(field_data[a][b,0])] = field_data[a][b,8]
 
     for a in range(max_node_num+1):
         the_file.write(str(pressure_list[a])+'\n')
+
+    the_file.write('Skin_Friction_Coefficient 3 '+str(max_node_num+1)+' float\n')
+
+    friction_list = np.zeros((max_node_num+1,3))
+
+    for a in range(len(field_data)):
+        for b in range(len(field_data[a][:,0])):
+            friction_list[int(field_data[a][b,0]),:] = field_data[a][b,9:12]
+
+    for a in range(max_node_num+1):
+        for b in range(3):
+            the_file.write(str(friction_list[a,b]))
+            if b<3:
+                the_file.write(' ')
+            else:
+                the_file.write('\n')
 
     return
 
@@ -448,6 +490,6 @@ correction_efficiencies = [0,1]
 
 efficiency = 0.
 
-razor_filename = 'example_razor_input.csv'
+su2_filename = 'example_su2_input.csv'
 
-main('mrsbw-V-BASE-newBL.su2',1,136218,4,136222,22500,158565,'wing',[0,1,0],[1,0,0],0.6321,0.6739,efficiency,banned_span,True,True,correction_efficiencies,razor_filename)
+main('mrsbw-V-BASE-newBL.su2',1,136218,4,136222,22500,158565,'wing',[0,1,0],[1,0,0],0.6321,0.6739,efficiency,banned_span,True,True,correction_efficiencies,su2_filename)
