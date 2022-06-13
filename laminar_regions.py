@@ -116,7 +116,7 @@ def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_t
 
     lower_surface = process_laminarity(leading_edge,trailing_edge_lower,su2_data,span_direction,chord_direction,leading_span,max_nlf_lower,banned_span,efficiency,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_lower_spline,lower_pathlist,correction_spline_list,correction_efficiencies)
     upper_surface = process_laminarity(leading_edge,trailing_edge_upper,su2_data,span_direction,chord_direction,leading_span,max_nlf_upper,banned_span,efficiency,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_upper_spline,upper_pathlist,correction_spline_list,correction_efficiencies)
-    leftover_surface = process_leftovers(leftovers,su2_data)
+    leftover_surface = process_leftovers(leftovers,su2_data,max_node_num)
 
     print('generated all laminarity metadata')
 
@@ -338,13 +338,13 @@ def process_laminarity(leading_edge,trailing_edge,su2_data,span_direction,chord_
             output_data[counter,9:12] = current_friction
             counter += 1
 
-    output_data = output_data[not np.all(output_data == 0, axis=1)]
+    output_data = output_data[~np.all(output_data == 0, axis=1)]
 
     return output_data
 
 def process_leftovers(leftovers,su2_data,max_node_num):
 
-    output_data = np.zeros((max_node_num,12))
+    output_data = np.zeros((max_node_num+1,12))
 
     for a in range(len(leftovers)):
         if leftovers[a] == 0:
@@ -353,7 +353,7 @@ def process_leftovers(leftovers,su2_data,max_node_num):
             output_data[a,8] = su2_data[a,13]
             output_data[a,9:12] = su2_data[a,15:18]
 
-    output_data = output_data[not np.all(output_data == 0, axis=1)]
+    output_data = output_data[~np.all(output_data == 0, axis=1)]
 
     return output_data
 
