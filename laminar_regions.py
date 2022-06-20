@@ -345,7 +345,7 @@ def process_laminarity(leading_edge,trailing_edge,su2_data,span_direction,chord_
 
             percent_transition = max_nlf*efficiency
 
-            if not current_banned_span and percent_chord < percent_transition+0.1 and efficiency > 0.1:
+            if percent_chord < percent_transition+0.1 and efficiency > 0.1:
 
                 if percent_chord < percent_transition:
                     corrected_friction = current_friction * laminar_spline(percent_transition) / turbulent_spline(percent_transition)
@@ -538,7 +538,8 @@ def mirrored_shifted_sigmoid(x,width,ban_list):
     #Betwixt the ban_list, the output of this function shall tend to 0
 
     if x > ban_list[-1,1]:
-        x = 1
+        output = 0.
+        return output
 
     for a in range(len(ban_list[:,0])):
         if x < ban_list[a,0]:
@@ -560,8 +561,8 @@ def mirrored_shifted_sigmoid(x,width,ban_list):
         sigmoid_1 = shifted_sigmoid(x1,width)
         sigmoid_2 = shifted_sigmoid(x2,width)
         output = (x - ban_list[ban_ID-1,1]) / (ban_list[ban_ID,0]-ban_list[ban_ID-1,1])
-        if ban_ID == 0:
-            output = sigmoid_2
+        if ban_ID == len(ban_list[:,0])-1:
+            output = sigmoid_1
         else:
             output = sigmoid_1*(1.-output) + sigmoid_2*output
 
@@ -571,7 +572,9 @@ def mirrored_shifted_sigmoid(x,width,ban_list):
         sigmoid_1 = shifted_sigmoid(x1,width)
         sigmoid_2 = shifted_sigmoid(x2,width)
         output = (x - ban_list[ban_ID,0]) / (ban_list[ban_ID,1] - ban_list[ban_ID,0])
-        if ban_ID == len(ban_list[:,0]):
+        if ban_ID == 0:
+            output = sigmoid_2
+        elif ban_ID == len(ban_list[:,0])-1:
             output = sigmoid_1
         else:
             output = sigmoid_1*(1.-output) + sigmoid_2*output
