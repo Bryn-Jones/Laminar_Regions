@@ -330,34 +330,29 @@ def process_laminarity(leading_edge,trailing_edge,su2_data,span_direction,chord_
                     current_banned_span = True
                     break
 
-            if not current_banned_span:
-                corrections_list = []
-
-                for c in range(len(correction_spline_list)):
-                    corrections_list.append(correction_spline_list[c](percent_chord))
-
-                efficiency_spline = CubicSpline(correction_efficiencies, corrections_list, axis=0)
-                corrected_pressure = current_pressure*shifted_sigmoid(percent_chord-(max_nlf*efficiency),0.00005) + (1-shifted_sigmoid(percent_chord-(max_nlf*efficiency),0.00005))*current_pressure*efficiency_spline(efficiency)
-                # corrected_friction = current_friction*shifted_sigmoid(percent_chord-(max_nlf*efficiency),0.00005) + (1-shifted_sigmoid(percent_chord-(max_nlf*efficiency),0.00005))*current_friction*efficiency_spline(efficiency)
-            else:
-                corrected_pressure = current_pressure
-                # corrected_friction = current_friction
-
             percent_transition = max_nlf*efficiency
 
             if percent_chord < percent_transition+0.1 and efficiency > 0.1:
 
                 if percent_chord < percent_transition:
                     corrected_friction = current_friction * laminar_spline(percent_transition) / turbulent_spline(percent_transition)
+                    corrected_pressure = current_pressure * laminar_spline(percent_transition) / turbulent_spline(percent_transition)
                 else:
+
                     transition_chord = percent_transition*(trailing_chord-leading_chord) + leading_chord
                     laminar_transition_cf = interpolate_field_values(su2_data,[15,16,17],element_tree,edge_list,[transition_chord,current_span],True,lower_or_upper) * laminar_spline(percent_transition) / turbulent_spline(percent_transition)
                     turbulent_transition_cf = interpolate_field_values(su2_data,[15,16,17],element_tree,edge_list,[transition_chord+0.1,current_span],True,lower_or_upper)
                     corrected_friction = turbulent_transition_cf*shifted_sigmoid(percent_chord-percent_transition,0.1) +  laminar_transition_cf*(1-shifted_sigmoid(percent_chord-percent_transition,0.1))
                     corrected_friction[corrected_friction>current_friction] = current_friction[corrected_friction>current_friction]
 
+                    laminar_transition_cp = interpolate_field_values(su2_data,[13],element_tree,edge_list,[transition_chord,current_span],True,lower_or_upper) * laminar_spline(percent_transition) / turbulent_spline(percent_transition)
+                    turbulent_transition_cp = interpolate_field_values(su2_data,[13],element_tree,edge_list,[transition_chord+0.1,current_span],True,lower_or_upper)
+                    corrected_pressure = turbulent_transition_cp*shifted_sigmoid(percent_chord-percent_transition,0.1) +  laminar_transition_cp*(1-shifted_sigmoid(percent_chord-percent_transition,0.1))
+                    corrected_pressure[corrected_pressure>current_pressure] = current_pressure[corrected_pressure>current_pressure]
+
             else:
                 corrected_friction = current_friction
+                corrected_pressure = current_pressure
 
             corrected_pressure = current_pressure*mirrored_shifted_sigmoid(percent_span,0.02,banned_span) + (1-mirrored_shifted_sigmoid(percent_span,0.02,banned_span))*corrected_pressure
             corrected_friction = current_friction*mirrored_shifted_sigmoid(percent_span,0.02,banned_span) + (1-mirrored_shifted_sigmoid(percent_span,0.02,banned_span))*corrected_friction
