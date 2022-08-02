@@ -2,8 +2,11 @@
 import re
 import numpy as np
 from scipy.interpolate import CubicSpline
+#### import the simple module from the paraview
+from paraview.simple import *
+import sys
 
-def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_trailing_edge_ID,tip_lower_trailing_edge_ID,root_upper_trailing_edge_ID,tip_upper_trailing_edge_ID,wing_marker_tag,span_direction,chord_direction,max_nlf_lower,max_nlf_upper,efficiency,banned_span,get_paths_from_csv,get_pos_from_csv,correction_efficiencies,su2_filename):
+def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_trailing_edge_ID,tip_lower_trailing_edge_ID,root_upper_trailing_edge_ID,tip_upper_trailing_edge_ID,wing_marker_tag,span_direction,chord_direction,max_nlf_lower,max_nlf_upper,efficiency_lower,efficiency_upper,banned_span,get_paths_from_csv,get_pos_from_csv,correction_efficiencies,su2_filename):
 
     node_connectivity, max_node_num, edge_list, number_of_elements = initialise_node_connectivity(su2_mesh_filepath,wing_marker_tag)
 
@@ -22,12 +25,12 @@ def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_t
     print('got position data')
 
     if get_paths_from_csv:
-        lower_pathlist = read_csv_as_list('lower_nodes.csv')
-        upper_pathlist = read_csv_as_list('upper_nodes.csv')
+        lower_pathlist = read_csv_as_list('C:/Users/[redacted]/Laminar_Regions/lower_nodes.csv')
+        upper_pathlist = read_csv_as_list('C:/Users/[redacted]/Laminar_Regions/upper_nodes.csv')
 
-        leading_edge = np.genfromtxt('leading_edge.csv', delimiter=',', dtype=int)
-        trailing_edge_lower = np.genfromtxt('trailing_edge_lower.csv', delimiter=',', dtype=int)
-        trailing_edge_upper = np.genfromtxt('trailing_edge_upper.csv', delimiter=',', dtype=int)
+        leading_edge = np.genfromtxt('C:/Users/[redacted]/Laminar_Regions/leading_edge.csv', delimiter=',', dtype=int)
+        trailing_edge_lower = np.genfromtxt('C:/Users/[redacted]/Laminar_Regions/trailing_edge_lower.csv', delimiter=',', dtype=int)
+        trailing_edge_upper = np.genfromtxt('C:/Users/[redacted]/Laminar_Regions/trailing_edge_upper.csv', delimiter=',', dtype=int)
 
         print('loaded paths from file')
     else:
@@ -122,26 +125,29 @@ def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_t
     # trailing_edge_lower_percent_chord = trailing_edge_lower_span_length/trailing_edge_lower_span_length[-1]
     # trailing_edge_upper_percent_chord = trailing_edge_upper_span_length/trailing_edge_upper_span_length[-1]
 
-    correction_spline_list = read_chordwise_corrections('laminar_distribution.csv')
+    #correction_spline_list = read_chordwise_corrections('C:/Users/[redacted]/Laminar_Regions/laminar_distribution.csv')
 
-    lower_laminar_spline, upper_laminar_spline, lower_turbulent_spline, upper_turbulent_spline = load_CF_corrections(max_nlf_lower,max_nlf_upper)
+    lower_laminar_spline_cf, upper_laminar_spline_cf, lower_turbulent_spline_cf, upper_turbulent_spline_cf, lower_laminar_spline_cp, upper_laminar_spline_cp, lower_turbulent_spline_cp, upper_turbulent_spline_cp = load_CF_corrections(max_nlf_lower,max_nlf_upper)
 
     print('created correction splines')
 
-    lower_surface = process_laminarity(leading_edge,trailing_edge_lower,su2_data,span_direction,chord_direction,leading_span,max_nlf_lower,banned_span,efficiency,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_lower_spline,lower_pathlist,correction_spline_list,correction_efficiencies,lower_laminar_spline,lower_turbulent_spline,element_tree,edge_list,-1)
-    upper_surface = process_laminarity(leading_edge,trailing_edge_upper,su2_data,span_direction,chord_direction,leading_span,max_nlf_upper,banned_span,efficiency,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_upper_spline,upper_pathlist,correction_spline_list,correction_efficiencies,upper_laminar_spline,upper_turbulent_spline,element_tree,edge_list,1)
+    lower_surface = process_laminarity(leading_edge,trailing_edge_lower,su2_data,span_direction,chord_direction,leading_span,max_nlf_lower,banned_span,efficiency_lower,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_lower_spline,lower_pathlist,correction_efficiencies,lower_laminar_spline_cf,lower_turbulent_spline_cf,lower_laminar_spline_cp,lower_turbulent_spline_cp,element_tree,edge_list,-1)
+    upper_surface = process_laminarity(leading_edge,trailing_edge_upper,su2_data,span_direction,chord_direction,leading_span,max_nlf_upper,banned_span,efficiency_upper,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_upper_spline,upper_pathlist,correction_efficiencies,upper_laminar_spline_cf,upper_turbulent_spline_cf,upper_laminar_spline_cp,upper_turbulent_spline_cp,element_tree,edge_list,1)
     leftover_surface = process_leftovers(leftovers,su2_data,max_node_num)
 
     print('generated all laminarity metadata')
 
     np.savetxt('lower_surface.csv',lower_surface,delimiter=',')
     np.savetxt('upper_surface.csv',upper_surface,delimiter=',')
+    np.savetxt('leftover_surface.csv',leftover_surface,delimiter=',')
 
     print('wrote data to csv files')
 
     write_vtk_file('wing.vtk',position_data,max_node_num,edge_list,number_of_elements,[lower_surface,upper_surface,leftover_surface])
 
     print('wrote data to vtk files')
+
+    calculate_coefficients()
 
     return
 
@@ -302,7 +308,7 @@ def path_spatial_length(path,position_data,direction):
 
     return path_length
 
-def process_laminarity(leading_edge,trailing_edge,su2_data,span_direction,chord_direction,leading_span,max_nlf,banned_span,efficiency,max_node_num,root_span,leading_edge_spline,trailing_edge_spline,node_list,correction_spline_list,correction_efficiencies,laminar_spline,turbulent_spline,element_tree,edge_list,lower_or_upper):
+def process_laminarity(leading_edge,trailing_edge,su2_data,span_direction,chord_direction,leading_span,max_nlf,banned_span,efficiency,max_node_num,root_span,leading_edge_spline,trailing_edge_spline,node_list,correction_efficiencies,laminar_spline_cf,turbulent_spline_cf,laminar_spline_cp,turbulent_spline_cp,element_tree,edge_list,lower_or_upper):
 
     output_data = np.zeros((max_node_num,12))
     counter = 0
@@ -335,20 +341,24 @@ def process_laminarity(leading_edge,trailing_edge,su2_data,span_direction,chord_
             if percent_chord < percent_transition+0.1 and efficiency > 0.1:
 
                 if percent_chord < percent_transition:
-                    corrected_friction = current_friction * laminar_spline(percent_transition) / turbulent_spline(percent_transition)
-                    corrected_pressure = current_pressure * laminar_spline(percent_transition) / turbulent_spline(percent_transition)
+
+                    corrected_friction = current_friction * laminar_spline_cf(percent_chord) / turbulent_spline_cf(percent_chord)
+                    corrected_pressure = current_pressure * laminar_spline_cp(percent_chord) / turbulent_spline_cp(percent_chord)
+
                 else:
 
                     transition_chord = percent_transition*(trailing_chord-leading_chord) + leading_chord
-                    laminar_transition_cf = interpolate_field_values(su2_data,[15,16,17],element_tree,edge_list,[transition_chord,current_span],True,lower_or_upper) * laminar_spline(percent_transition) / turbulent_spline(percent_transition)
+                    laminar_transition_cf = interpolate_field_values(su2_data,[15,16,17],element_tree,edge_list,[transition_chord,current_span],True,lower_or_upper) * laminar_spline_cf(percent_transition) / turbulent_spline_cf(percent_transition)
                     turbulent_transition_cf = interpolate_field_values(su2_data,[15,16,17],element_tree,edge_list,[transition_chord+0.1,current_span],True,lower_or_upper)
                     corrected_friction = turbulent_transition_cf*shifted_sigmoid(percent_chord-percent_transition,0.1) +  laminar_transition_cf*(1-shifted_sigmoid(percent_chord-percent_transition,0.1))
-                    corrected_friction[corrected_friction>current_friction] = current_friction[corrected_friction>current_friction]
+                    corrected_friction[np.abs(corrected_friction)>np.abs(current_friction)] = current_friction[np.abs(corrected_friction)>np.abs(current_friction)]
 
-                    laminar_transition_cp = interpolate_field_values(su2_data,[13],element_tree,edge_list,[transition_chord,current_span],True,lower_or_upper) * laminar_spline(percent_transition) / turbulent_spline(percent_transition)
+                    laminar_transition_cp = interpolate_field_values(su2_data,[13],element_tree,edge_list,[transition_chord,current_span],True,lower_or_upper) * laminar_spline_cp(percent_transition) / turbulent_spline_cp(percent_transition)
                     turbulent_transition_cp = interpolate_field_values(su2_data,[13],element_tree,edge_list,[transition_chord+0.1,current_span],True,lower_or_upper)
                     corrected_pressure = turbulent_transition_cp*shifted_sigmoid(percent_chord-percent_transition,0.1) +  laminar_transition_cp*(1-shifted_sigmoid(percent_chord-percent_transition,0.1))
-                    corrected_pressure[corrected_pressure>current_pressure] = current_pressure[corrected_pressure>current_pressure]
+
+                    if np.abs(corrected_pressure) > np.abs(current_pressure):
+                        corrected_pressure = current_pressure
 
             else:
                 corrected_friction = current_friction
@@ -356,6 +366,9 @@ def process_laminarity(leading_edge,trailing_edge,su2_data,span_direction,chord_
 
             corrected_pressure = current_pressure*mirrored_shifted_sigmoid(percent_span,0.02,banned_span) + (1-mirrored_shifted_sigmoid(percent_span,0.02,banned_span))*corrected_pressure
             corrected_friction = current_friction*mirrored_shifted_sigmoid(percent_span,0.02,banned_span) + (1-mirrored_shifted_sigmoid(percent_span,0.02,banned_span))*corrected_friction
+
+            # if corrected_friction[0] < 0 and percent_chord > 0.1 and percent_chord < 0.6:
+            #     print(str(percent_chord)+' : '+str(laminar_spline_cf(percent_transition) / turbulent_spline_cf(percent_transition))+' : '+str(corrected_friction[0])+' : '+str(current_friction[0]))
 
             if current_efficiency < efficiency and not current_banned_span:
                 laminar_or_not = 1
@@ -578,65 +591,43 @@ def mirrored_shifted_sigmoid(x,width,ban_list):
 
 def load_CF_corrections(max_nlf_lower,max_nlf_upper):
 
-    laminar_lower = 'Laminar 1.csv'
-    laminar_upper = 'Laminar 2.csv'
-    turbulent_lower = 'Turbulent 1.csv'
-    turbulent_upper = 'Turbulent 2.csv'
+    laminar_lower_filename = 'C:/Users/[redacted]/Laminar_Regions/laminar_lower.mses'
+    laminar_upper_filename = 'C:/Users/[redacted]/Laminar_Regions/laminar_upper.mses'
+    turbulent_lower_filename = 'C:/Users/[redacted]/Laminar_Regions/turbulent_lower.mses'
+    turbulent_upper_filename = 'C:/Users/[redacted]/Laminar_Regions/turbulent_upper.mses'
 
-    lower_laminar_data = np.genfromtxt(laminar_lower, delimiter=',')
-    upper_laminar_data = np.genfromtxt(laminar_upper, delimiter=',')
-    lower_turbulent_data = np.genfromtxt(turbulent_lower, delimiter=',')
-    upper_turbulent_data = np.genfromtxt(turbulent_upper, delimiter=',')
+    #Remove double-spaces so numpy can read it easily
+    for filename in [laminar_lower_filename,laminar_upper_filename,turbulent_lower_filename,turbulent_upper_filename]:
+        the_file = open(filename,'r')
+        file_data = the_file.read()
+        the_file.close()
+        while '  ' in file_data:
+            file_data = file_data.replace('  ',' ')
+            the_file = open(filename,'w')
+            the_file.write(file_data)
+            the_file.close()
 
-    # overall_min = 1.e10
-    # overall_max = -1.e10
-    # for element in [lower_laminar_data,upper_laminar_data,lower_turbulent_data,upper_turbulent_data]:
-    #     if np.min(element[:,0]) < overall_min:
-    #         overall_min = np.min(element[:,0])
-    #     if np.max(element[:,0]) > overall_max:
-    #         overall_max = np.max(element[:,0])
+    lower_laminar_data = np.genfromtxt(laminar_lower_filename, delimiter=' ')
+    upper_laminar_data = np.genfromtxt(laminar_upper_filename, delimiter=' ')
+    lower_turbulent_data = np.genfromtxt(turbulent_lower_filename, delimiter=' ')
+    upper_turbulent_data = np.genfromtxt(turbulent_upper_filename, delimiter=' ')
 
-    lower_laminar_data[:,0] = lower_laminar_data[:,0] - np.min(lower_laminar_data[:,0])
-    lower_laminar_data[:,0] = lower_laminar_data[:,0] / np.max(lower_laminar_data[:,0])
-    upper_laminar_data[:,0] = upper_laminar_data[:,0] - np.min(upper_laminar_data[:,0])
-    upper_laminar_data[:,0] = upper_laminar_data[:,0] / np.max(upper_laminar_data[:,0])
-    lower_turbulent_data[:,0] = lower_turbulent_data[:,0] - np.min(lower_turbulent_data[:,0])
-    lower_turbulent_data[:,0] = lower_turbulent_data[:,0] / np.max(lower_turbulent_data[:,0])
-    upper_turbulent_data[:,0] = upper_turbulent_data[:,0] - np.min(upper_turbulent_data[:,0])
-    upper_turbulent_data[:,0] = upper_turbulent_data[:,0] / np.max(upper_turbulent_data[:,0])
+    lower_laminar_spline_cf = CubicSpline(lower_laminar_data[:,0], lower_laminar_data[:,14], axis=0)
+    upper_laminar_spline_cf = CubicSpline(upper_laminar_data[:,0], upper_laminar_data[:,14], axis=0)
+    lower_turbulent_spline_cf = CubicSpline(lower_turbulent_data[:,0], lower_turbulent_data[:,14], axis=0)
+    upper_turbulent_spline_cf = CubicSpline(upper_turbulent_data[:,0], upper_turbulent_data[:,14], axis=0)
 
-    for a in range(1,len(lower_laminar_data[:,1])):
-        if lower_laminar_data[a,1] > lower_laminar_data[a-1,1]:
-            transition_point_lower = a
-            transition_lower_value = lower_laminar_data[a,0]
-            break
+    lower_laminar_spline_cp = CubicSpline(lower_laminar_data[:,0], lower_laminar_data[:,14], axis=0)
+    upper_laminar_spline_cp = CubicSpline(upper_laminar_data[:,0], upper_laminar_data[:,14], axis=0)
+    lower_turbulent_spline_cp = CubicSpline(lower_turbulent_data[:,0], lower_turbulent_data[:,14], axis=0)
+    upper_turbulent_spline_cp = CubicSpline(upper_turbulent_data[:,0], upper_turbulent_data[:,14], axis=0)
 
-    lower_laminar_data[:,0] = lower_laminar_data[:,0] / (transition_lower_value / max_nlf_lower)
-    lower_turbulent_data[:,0] = lower_turbulent_data[:,0] / (transition_lower_value / max_nlf_lower)
-
-    for a in range(1,len(upper_laminar_data[:,1])):
-        if upper_laminar_data[a,1] > upper_laminar_data[a-1,1]:
-            transition_point_upper = a
-            transition_upper_value = upper_laminar_data[a,0]
-            break
-
-    upper_laminar_data[:,0] = upper_laminar_data[:,0] / (transition_upper_value / max_nlf_upper)
-    upper_turbulent_data[:,0] = upper_turbulent_data[:,0] / (transition_upper_value / max_nlf_upper)
-
-    lower_laminar_spline = CubicSpline(lower_laminar_data[:,0], lower_laminar_data[:,1], axis=0)
-    upper_laminar_spline = CubicSpline(upper_laminar_data[:,0], upper_laminar_data[:,1], axis=0)
-    lower_turbulent_spline = CubicSpline(lower_turbulent_data[:,0], lower_turbulent_data[:,1], axis=0)
-    upper_turbulent_spline = CubicSpline(upper_turbulent_data[:,0], upper_turbulent_data[:,1], axis=0)
-
-    # print(lower_laminar_data)
-    # print(lower_turbulent_data)
-    # print(transition_point_lower)
-    # for a in range(20):
-    #     print([str(a/(20/max_nlf_lower)),lower_laminar_spline(a/(20/max_nlf_lower))/lower_turbulent_spline(a/(20/max_nlf_lower))])
+    # for a in range(1000):
+    #     print([str(a/(1000/max_nlf_lower)),lower_laminar_spline_cf(a/(1000/max_nlf_lower))/lower_turbulent_spline_cf(a/(1000/max_nlf_lower))])
     #     #print([str(a/(20/max_nlf_lower)),lower_laminar_spline(a/(20/max_nlf_lower))])
     # raise ValueError
 
-    return lower_laminar_spline, upper_laminar_spline, lower_turbulent_spline, upper_turbulent_spline
+    return lower_laminar_spline_cf, upper_laminar_spline_cf, lower_turbulent_spline_cf, upper_turbulent_spline_cf, lower_laminar_spline_cp, upper_laminar_spline_cp, lower_turbulent_spline_cp, upper_turbulent_spline_cp
 
 def bool_array_to_decimal(the_array):
 
@@ -776,6 +767,229 @@ def interpolate_field_values(su2_data,which_fields,element_tree,edge_list,the_po
 
     return interpolated_field_values
 
+def calculate_coefficients():
+    # trace generated using paraview version 5.10.0-RC1
+
+    #### disable automatic camera reset on 'Show'
+    paraview.simple._DisableFirstRenderCameraReset()
+
+    # create a new 'Legacy VTK Reader'
+    wingvtk = LegacyVTKReader(registrationName='wing.vtk', FileNames=['C:\\Users\\[redacted]\\Laminar_Regions\\HDMR\\wing.vtk'])
+
+    UpdatePipeline(time=0.0, proxy=wingvtk)
+
+    # create a new 'Calculator'
+    calculator1 = Calculator(registrationName='Calculator1', Input=wingvtk)
+    calculator1.AttributeType = 'Point Data'
+    calculator1.CoordinateResults = 0
+    calculator1.ResultNormals = 0
+    calculator1.ResultTCoords = 0
+    calculator1.ResultArrayName = 'Result'
+    calculator1.Function = ''
+    calculator1.ReplaceInvalidResults = 1
+    calculator1.ReplacementValue = 0.0
+    calculator1.ResultArrayType = 'Double'
+
+    # Properties modified on calculator1
+    calculator1.Function = ''
+
+    UpdatePipeline(time=0.0, proxy=calculator1)
+
+    # Properties modified on calculator1
+    calculator1.Function = 'coords = Coords'
+
+    # Properties modified on calculator1
+    calculator1.Function = 'Coords = coords'
+
+    # Properties modified on calculator1
+    calculator1.CoordinateResults = 1
+    calculator1.Function = 'coords'
+
+    # set active source
+    SetActiveSource(wingvtk)
+
+    # create a new 'Extract Surface'
+    extractSurface1 = ExtractSurface(registrationName='ExtractSurface1', Input=wingvtk)
+    extractSurface1.PieceInvariant = 1
+    extractSurface1.NonlinearSubdivisionLevel = 1
+    extractSurface1.FastMode = 0
+    extractSurface1.UseGeometryFilter = 0
+
+    UpdatePipeline(time=0.0, proxy=extractSurface1)
+
+    # create a new 'Generate Surface Normals'
+    generateSurfaceNormals1 = GenerateSurfaceNormals(registrationName='GenerateSurfaceNormals1', Input=extractSurface1)
+    generateSurfaceNormals1.FeatureAngle = 30.0
+    generateSurfaceNormals1.Splitting = 1
+    generateSurfaceNormals1.Consistency = 1
+    generateSurfaceNormals1.FlipNormals = 0
+    generateSurfaceNormals1.NonManifoldTraversal = 1
+    generateSurfaceNormals1.ComputeCellNormals = 0
+    generateSurfaceNormals1.PieceInvariant = 1
+
+    # Properties modified on generateSurfaceNormals1
+    generateSurfaceNormals1.FlipNormals = 1
+
+    UpdatePipeline(time=0.0, proxy=generateSurfaceNormals1)
+
+    # create a new 'Calculator'
+    calculator2 = Calculator(registrationName='Calculator2', Input=generateSurfaceNormals1)
+    calculator2.AttributeType = 'Point Data'
+    calculator2.CoordinateResults = 0
+    calculator2.ResultNormals = 0
+    calculator2.ResultTCoords = 0
+    calculator2.ResultArrayName = 'Result'
+    calculator2.Function = ''
+    calculator2.ReplaceInvalidResults = 1
+    calculator2.ReplacementValue = 0.0
+    calculator2.ResultArrayType = 'Double'
+
+    # Properties modified on calculator2
+    calculator2.ResultArrayName = 'Pressure_Coefficient'
+    calculator2.Function = '(Pressure-26201.6)/(0.5*0.409727*219.921^2)'
+
+    UpdatePipeline(time=0.0, proxy=calculator2)
+
+    # create a new 'Calculator'
+    calculator3 = Calculator(registrationName='Calculator3', Input=calculator2)
+    calculator3.AttributeType = 'Point Data'
+    calculator3.CoordinateResults = 0
+    calculator3.ResultNormals = 0
+    calculator3.ResultTCoords = 0
+    calculator3.ResultArrayName = 'Result'
+    calculator3.Function = ''
+    calculator3.ReplaceInvalidResults = 1
+    calculator3.ReplacementValue = 0.0
+    calculator3.ResultArrayType = 'Double'
+
+    # Properties modified on calculator3
+    calculator3.ResultArrayName = 'CpForce'
+    calculator3.Function = 'Pressure_Coefficient*Normals'
+
+    UpdatePipeline(time=0.0, proxy=calculator3)
+
+    # create a new 'Calculator'
+    calculator4 = Calculator(registrationName='Calculator4', Input=calculator3)
+    calculator4.AttributeType = 'Point Data'
+    calculator4.CoordinateResults = 0
+    calculator4.ResultNormals = 0
+    calculator4.ResultTCoords = 0
+    calculator4.ResultArrayName = 'Result'
+    calculator4.Function = ''
+    calculator4.ReplaceInvalidResults = 1
+    calculator4.ReplacementValue = 0.0
+    calculator4.ResultArrayType = 'Double'
+
+    # Properties modified on calculator4
+    calculator4.ResultArrayName = 'Total_Force'
+    calculator4.Function = 'CpForce+Skin_Friction_Coefficient'
+
+    UpdatePipeline(time=0.0, proxy=calculator4)
+
+    # create a new 'Calculator'
+    calculator5 = Calculator(registrationName='Calculator5', Input=calculator4)
+    calculator5.AttributeType = 'Point Data'
+    calculator5.CoordinateResults = 0
+    calculator5.ResultNormals = 0
+    calculator5.ResultTCoords = 0
+    calculator5.ResultArrayName = 'Result'
+    calculator5.Function = ''
+    calculator5.ReplaceInvalidResults = 1
+    calculator5.ReplacementValue = 0.0
+    calculator5.ResultArrayType = 'Double'
+
+    # Properties modified on calculator5
+    calculator5.ResultArrayName = 'Drag'
+    calculator5.Function = 'Total_Force_X*cos(0.0)+Total_Force_Z*sin(0.0)'
+
+    UpdatePipeline(time=0.0, proxy=calculator5)
+
+    # create a new 'Calculator'
+    calculator6 = Calculator(registrationName='Calculator6', Input=calculator5)
+    calculator6.AttributeType = 'Point Data'
+    calculator6.CoordinateResults = 0
+    calculator6.ResultNormals = 0
+    calculator6.ResultTCoords = 0
+    calculator6.ResultArrayName = 'Lift'
+    calculator6.Function = ''
+    calculator6.ReplaceInvalidResults = 1
+    calculator6.ReplacementValue = 0.0
+    calculator6.ResultArrayType = 'Double'
+
+    # Properties modified on calculator6
+    calculator6.Function = '-Total_Force_X*sin(0.0)+Total_Force_Z*cos(0.0)'
+
+    UpdatePipeline(time=0.0, proxy=calculator6)
+
+    # create a new 'Integrate Variables'
+    integrateVariables1 = IntegrateVariables(registrationName='IntegrateVariables1', Input=calculator6)
+    integrateVariables1.DivideCellDataByVolume = 0
+
+    UpdatePipeline(time=0.0, proxy=integrateVariables1)
+
+    # create a new 'Calculator'
+    calculator7 = Calculator(registrationName='Calculator7', Input=integrateVariables1)
+    calculator7.AttributeType = 'Point Data'
+    calculator7.CoordinateResults = 0
+    calculator7.ResultNormals = 0
+    calculator7.ResultTCoords = 0
+    calculator7.ResultArrayName = 'CL'
+    calculator7.Function = ''
+    calculator7.ReplaceInvalidResults = 1
+    calculator7.ReplacementValue = 0.0
+    calculator7.ResultArrayType = 'Double'
+
+    # Properties modified on calculator7
+    calculator7.Function = 'Lift/64.83938389994147'
+
+    UpdatePipeline(time=0.0, proxy=calculator7)
+
+    # create a new 'Calculator'
+    calculator8 = Calculator(registrationName='Calculator8', Input=calculator7)
+    calculator8.AttributeType = 'Point Data'
+    calculator8.CoordinateResults = 0
+    calculator8.ResultNormals = 0
+    calculator8.ResultTCoords = 0
+    calculator8.ResultArrayName = 'CD'
+    calculator8.Function = ''
+    calculator8.ReplaceInvalidResults = 1
+    calculator8.ReplacementValue = 0.0
+    calculator8.ResultArrayType = 'Double'
+
+    # Properties modified on calculator8
+    calculator8.Function = 'Drag/64.83938389994147'
+
+    UpdatePipeline(time=0.0, proxy=calculator8)
+
+    result = servermanager.Fetch(calculator8).GetPointData()
+    CD = result.GetArray("CD").GetValue(0)
+    CL = result.GetArray("CL").GetValue(0)
+
+    return CL, CD
+
+def laminar_sensitivity_function(x):
+
+    banned_span = np.zeros((4,2))
+    banned_span[0,:] = [0.,(0.02+x[0])]
+    banned_span[1,:] = [0.2+x[1],0.25+x[2]]
+    banned_span[2,:] = [0.45+x[3],0.48+x[4]]
+    banned_span[3,:] = [0.98+x[5],1]
+
+    correction_efficiencies = [0,1]
+
+    efficiency_lower = x[6]
+    efficiency_upper = x[7]
+
+    span_direction = [0,1,0]
+    chord_direction = [1,0,0]
+
+    su2_filename = 'C:/Users/[redacted]/Laminar_Regions/example_su2_input.csv'
+
+    main('C:/Users/[redacted]/Laminar_Regions/mrsbw-V-BASE-newBL.su2',1,136218,4,136222,22500,158565,'wing',span_direction,chord_direction,0.6321,0.6739,efficiency_lower,efficiency_upper,banned_span,True,True,correction_efficiencies,su2_filename)
+    CL, CD = calculate_coefficients()
+
+    return CL
+
 banned_span = np.zeros((4,2))
 banned_span[0,:] = [0.,0.03]
 banned_span[1,:] = [0.2,0.25]
@@ -784,11 +998,12 @@ banned_span[3,:] = [0.96,1]
 
 correction_efficiencies = [0,1]
 
-efficiency = 1.
+efficiency_lower = 0.5
+efficiency_upper = 0.5
 
 span_direction = [0,1,0]
 chord_direction = [1,0,0]
 
 su2_filename = 'example_su2_input.csv'
 
-main('mrsbw-V-BASE-newBL.su2',1,136218,4,136222,22500,158565,'wing',span_direction,chord_direction,0.6321,0.6739,efficiency,banned_span,True,True,correction_efficiencies,su2_filename)
+main('mrsbw-V-BASE-newBL.su2',1,136218,4,136222,22500,158565,'wing',span_direction,chord_direction,0.6321,0.6739,efficiency_lower,efficiency_upper,banned_span,True,True,correction_efficiencies,su2_filename)
