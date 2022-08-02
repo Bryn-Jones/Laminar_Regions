@@ -5,3 +5,8 @@
 *.vtu
 *.txt
 *.vtk
+*.zip
+*Mses*
+bl*
+*HDMR*
+su2*
