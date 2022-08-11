@@ -2,15 +2,14 @@
 import re
 import numpy as np
 from scipy.interpolate import CubicSpline
-#### import the simple module from the paraview
 from paraview.simple import *
 import sys
 
-def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_trailing_edge_ID,tip_lower_trailing_edge_ID,root_upper_trailing_edge_ID,tip_upper_trailing_edge_ID,wing_marker_tag,span_direction,chord_direction,max_nlf_lower,max_nlf_upper,efficiency_lower,efficiency_upper,banned_span,get_paths_from_csv,get_pos_from_csv,correction_efficiencies,su2_filename):
+def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_trailing_edge_ID,tip_lower_trailing_edge_ID,root_upper_trailing_edge_ID,tip_upper_trailing_edge_ID,wing_marker_tag,span_direction,chord_direction,max_nlf_lower,max_nlf_upper,efficiency_lower,efficiency_upper,banned_span,get_paths_from_csv,get_pos_from_csv,su2_filename,root_filepath,laminar_lower_filename,laminar_upper_filename,turbulent_lower_filename,turbulent_upper_filename,razor_out_filename,output_vtk_instead_of_csv):
 
-    node_connectivity, max_node_num, edge_list, number_of_elements = initialise_node_connectivity(su2_mesh_filepath,wing_marker_tag)
+    node_connectivity, max_node_num, edge_list, number_of_elements = initialise_node_connectivity(root_filepath+su2_mesh_filepath,wing_marker_tag)
 
-    su2_data = np.genfromtxt(su2_filename, delimiter=',')
+    su2_data = np.genfromtxt(root_filepath+su2_filename, delimiter=',')
     if all(np.isnan(su2_data[0,:])):
         su2_data = np.delete(su2_data,0,axis=0)
 
@@ -20,17 +19,17 @@ def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_t
     else:
         #Generate nodal position data
         position_data = initialise_position_data(su2_mesh_filepath,max_node_num)
-        np.savetxt('position_data.csv', position_data, delimiter=',')
+        np.savetxt(root_filepath+'position_data.csv', position_data, delimiter=',')
 
     print('got position data')
 
     if get_paths_from_csv:
-        lower_pathlist = read_csv_as_list('C:/Users/[redacted]/Laminar_Regions/lower_nodes.csv')
-        upper_pathlist = read_csv_as_list('C:/Users/[redacted]/Laminar_Regions/upper_nodes.csv')
+        lower_pathlist = read_csv_as_list(root_filepath+'lower_nodes.csv')
+        upper_pathlist = read_csv_as_list(root_filepath+'upper_nodes.csv')
 
-        leading_edge = np.genfromtxt('C:/Users/[redacted]/Laminar_Regions/leading_edge.csv', delimiter=',', dtype=int)
-        trailing_edge_lower = np.genfromtxt('C:/Users/[redacted]/Laminar_Regions/trailing_edge_lower.csv', delimiter=',', dtype=int)
-        trailing_edge_upper = np.genfromtxt('C:/Users/[redacted]/Laminar_Regions/trailing_edge_upper.csv', delimiter=',', dtype=int)
+        leading_edge = np.genfromtxt(root_filepath+'leading_edge.csv', delimiter=',', dtype=int)
+        trailing_edge_lower = np.genfromtxt(root_filepath+'trailing_edge_lower.csv', delimiter=',', dtype=int)
+        trailing_edge_upper = np.genfromtxt(root_filepath+'trailing_edge_upper.csv', delimiter=',', dtype=int)
 
         print('loaded paths from file')
     else:
@@ -44,28 +43,40 @@ def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_t
         print('separated upper and lower surfaces')
 
         #Find leading/trailing edges
-        leading_edge = a_star_search(root_leading_edge_ID,tip_leading_edge_ID,node_connectivity,position_data,upper_lower_direction,-lower_surface_direction,upper_lower_boundary,set())
+        leading_edge = a_star_search(root_leading_edge_ID,tip_leading_edge_ID,node_connectivity,position_data,upper_lower_direction,None,upper_lower_boundary,set())
         print('found leading edge')
-        trailing_edge_lower = a_star_search(root_lower_trailing_edge_ID,tip_lower_trailing_edge_ID,node_connectivity,position_data,upper_lower_direction,lower_surface_direction,upper_lower_boundary,set())
+        trailing_edge_lower = a_star_search(root_lower_trailing_edge_ID,tip_lower_trailing_edge_ID,node_connectivity,position_data,upper_lower_direction,None,upper_lower_boundary,set())
         print('found lower trailing edge')
-        trailing_edge_upper = a_star_search(root_upper_trailing_edge_ID,tip_upper_trailing_edge_ID,node_connectivity,position_data,upper_lower_direction,-lower_surface_direction,upper_lower_boundary,set(trailing_edge_lower))
+        trailing_edge_upper = a_star_search(root_upper_trailing_edge_ID,tip_upper_trailing_edge_ID,node_connectivity,position_data,upper_lower_direction,None,upper_lower_boundary,set(trailing_edge_lower))
         print('found upper trailing edge')
 
         print('leading edge length: '+str(len(leading_edge)))
         print('lower trailing edge length: '+str(len(trailing_edge_lower)))
         print('upper trailing edge length: '+str(len(trailing_edge_upper)))
 
-        np.savetxt('leading_edge.csv', leading_edge, delimiter=',')
-        np.savetxt('trailing_edge_lower.csv', trailing_edge_lower, delimiter=',')
-        np.savetxt('trailing_edge_upper.csv', trailing_edge_upper, delimiter=',')
+        np.savetxt(root_filepath+'leading_edge.csv', leading_edge, delimiter=',')
+        np.savetxt(root_filepath+'trailing_edge_lower.csv', trailing_edge_lower, delimiter=',')
+        np.savetxt(root_filepath+'trailing_edge_upper.csv', trailing_edge_upper, delimiter=',')
 
         lower_pathlist = get_surface_path_list(leading_edge,trailing_edge_lower,node_connectivity,position_data,upper_lower_direction,lower_surface_direction,upper_lower_boundary)
-        upper_pathlist = get_surface_path_list(leading_edge,trailing_edge_lower,node_connectivity,position_data,upper_lower_direction,-lower_surface_direction,upper_lower_boundary)
+        upper_pathlist = get_surface_path_list(leading_edge,trailing_edge_upper,node_connectivity,position_data,upper_lower_direction,-lower_surface_direction,upper_lower_boundary)
 
         print('got lower/upper surface full node list')
 
-        save_list_as_csv(lower_pathlist,'lower_nodes.csv')
-        save_list_as_csv(upper_pathlist,'upper_nodes.csv')
+        save_list_as_csv(lower_pathlist,root_filepath+'lower_nodes.csv')
+        save_list_as_csv(upper_pathlist,root_filepath+'upper_nodes.csv')
+
+    # flattened_list = []
+    # for row in lower_pathlist:
+    #     for element in row:
+    #         flattened_list.append(element)
+    # np.savetxt('lower_test.csv',su2_data[flattened_list,:],delimiter=',')
+    # flattened_list = []
+    # for row in upper_pathlist:
+    #     for element in row:
+    #         flattened_list.append(element)
+    # np.savetxt('upper_test.csv',su2_data[flattened_list,:],delimiter=',')
+    # raise ValueError
 
     lower_set = set()
     upper_set = set()
@@ -115,6 +126,10 @@ def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_t
     print('trailing edge lower chord length: '+str(trailing_edge_lower_chord_length[-1]-trailing_edge_lower_chord_length[0]))
     print('trailing edge upper chord length: '+str(trailing_edge_upper_chord_length[-1]-trailing_edge_upper_chord_length[0]))
 
+    print(leading_edge_span_length)
+    print(leading_edge_chord_length)
+    raise ValueError
+
     leading_edge_spline = CubicSpline(leading_edge_span_length, leading_edge_chord_length, axis=0)
     trailing_edge_lower_spline = CubicSpline(trailing_edge_lower_span_length, trailing_edge_lower_chord_length, axis=0)
     trailing_edge_upper_spline = CubicSpline(trailing_edge_upper_span_length, trailing_edge_upper_chord_length, axis=0)
@@ -125,29 +140,34 @@ def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_t
     # trailing_edge_lower_percent_chord = trailing_edge_lower_span_length/trailing_edge_lower_span_length[-1]
     # trailing_edge_upper_percent_chord = trailing_edge_upper_span_length/trailing_edge_upper_span_length[-1]
 
-    #correction_spline_list = read_chordwise_corrections('C:/Users/[redacted]/Laminar_Regions/laminar_distribution.csv')
+    #correction_spline_list = read_chordwise_corrections('C:/[redacted]/Laminar_Regions/laminar_distribution.csv')
 
-    lower_laminar_spline_cf, upper_laminar_spline_cf, lower_turbulent_spline_cf, upper_turbulent_spline_cf, lower_laminar_spline_cp, upper_laminar_spline_cp, lower_turbulent_spline_cp, upper_turbulent_spline_cp = load_CF_corrections(max_nlf_lower,max_nlf_upper)
+    lower_laminar_spline_cf, upper_laminar_spline_cf, lower_turbulent_spline_cf, upper_turbulent_spline_cf, lower_laminar_spline_cp, upper_laminar_spline_cp, lower_turbulent_spline_cp, upper_turbulent_spline_cp = load_CF_corrections(max_nlf_lower,max_nlf_upper,root_filepath,laminar_lower_filename,laminar_upper_filename,turbulent_lower_filename,turbulent_upper_filename)
 
     print('created correction splines')
 
-    lower_surface = process_laminarity(leading_edge,trailing_edge_lower,su2_data,span_direction,chord_direction,leading_span,max_nlf_lower,banned_span,efficiency_lower,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_lower_spline,lower_pathlist,correction_efficiencies,lower_laminar_spline_cf,lower_turbulent_spline_cf,lower_laminar_spline_cp,lower_turbulent_spline_cp,element_tree,edge_list,-1)
-    upper_surface = process_laminarity(leading_edge,trailing_edge_upper,su2_data,span_direction,chord_direction,leading_span,max_nlf_upper,banned_span,efficiency_upper,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_upper_spline,upper_pathlist,correction_efficiencies,upper_laminar_spline_cf,upper_turbulent_spline_cf,upper_laminar_spline_cp,upper_turbulent_spline_cp,element_tree,edge_list,1)
+    lower_surface = process_laminarity(leading_edge,trailing_edge_lower,su2_data,span_direction,chord_direction,leading_span,max_nlf_lower,banned_span,efficiency_lower,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_lower_spline,lower_pathlist,lower_laminar_spline_cf,lower_turbulent_spline_cf,lower_laminar_spline_cp,lower_turbulent_spline_cp,element_tree,edge_list,-1)
+    upper_surface = process_laminarity(leading_edge,trailing_edge_upper,su2_data,span_direction,chord_direction,leading_span,max_nlf_upper,banned_span,efficiency_upper,max_node_num,leading_edge_span_length[0],leading_edge_spline,trailing_edge_upper_spline,upper_pathlist,upper_laminar_spline_cf,upper_turbulent_spline_cf,upper_laminar_spline_cp,upper_turbulent_spline_cp,element_tree,edge_list,1)
     leftover_surface = process_leftovers(leftovers,su2_data,max_node_num)
 
     print('generated all laminarity metadata')
 
-    np.savetxt('lower_surface.csv',lower_surface,delimiter=',')
-    np.savetxt('upper_surface.csv',upper_surface,delimiter=',')
-    np.savetxt('leftover_surface.csv',leftover_surface,delimiter=',')
+    if not output_vtk_instead_of_csv:
+        output_file = np.concatenate((lower_surface,upper_surface,leftover_surface),axis=0)
+        np.savetxt(root_filepath+razor_out_filename,output_file,delimiter=',')
+        # np.savetxt('lower_surface.csv',lower_surface,delimiter=',')
+        # np.savetxt('upper_surface.csv',upper_surface,delimiter=',')
+        # np.savetxt('leftover_surface.csv',leftover_surface,delimiter=',')
 
-    print('wrote data to csv files')
+        print('wrote data to csv files')
 
-    write_vtk_file('wing.vtk',position_data,max_node_num,edge_list,number_of_elements,[lower_surface,upper_surface,leftover_surface])
+    else:
 
-    print('wrote data to vtk files')
+        write_vtk_file(root_filepath+razor_out_filename,position_data,max_node_num,edge_list,number_of_elements,[lower_surface,upper_surface,leftover_surface])
 
-    calculate_coefficients()
+        print('wrote data to vtk files')
+
+    # calculate_coefficients()
 
     return
 
@@ -183,7 +203,7 @@ def initialise_node_connectivity(su2_mesh_filepath,wing_marker_tag):
 
 def a_star_search(start_node,target_node,node_connectivity,position_data,upper_lower_direction,correct_direction,upper_lower_boundary,blacklist):
 
-    node_score = [1E10]*len(node_connectivity)
+    node_score = [1.E50]*len(node_connectivity)
     node_score[start_node] = 0
 
     def breadth_search(node_list,node_connectivity,node_score,blacklist,target_node):
@@ -196,11 +216,24 @@ def a_star_search(start_node,target_node,node_connectivity,position_data,upper_l
         for which_node in node_list:
             if node_score[which_node] < node_score[target_node]:
                 for element in node_connectivity[which_node]:
-                    which_direction = (np.dot(upper_lower_direction,position_data[element,:])-upper_lower_boundary)*correct_direction
-                    if element not in whitelist and element not in blacklist and which_direction > -0.01:
+
+                    if element not in whitelist and element not in blacklist:# and which_direction > -0.01:
                         whitelist.add(element)
-                    if node_score[element] > node_score[which_node]+1:
-                        node_score[element] = node_score[which_node]+1
+
+                    if correct_direction is not None:
+                        which_direction = (np.dot(upper_lower_direction,position_data[element,:])-upper_lower_boundary)*correct_direction
+                    else:
+                        which_direction = 1.
+
+                    node_difference = position_data[element,:]-position_data[which_node,:]
+                    if which_direction < 0.:
+                        node_difference *= 3.
+
+                    node_distance = np.linalg.norm(node_difference)
+
+                    if node_score[element] > node_score[which_node] + node_distance:
+                        node_score[element] = node_score[which_node] + node_distance
+
                 blacklist.add(which_node)
 
         new_node_list = []
@@ -219,18 +252,33 @@ def a_star_search(start_node,target_node,node_connectivity,position_data,upper_l
 
     def get_optimal_path(current_score,current_node,node_connectivity,node_score,optimal_path,position_data,target_node,exit_flag=False):
 
-        whitelist = []
+        score_list = []
 
         for element in node_connectivity[current_node]:
-            if not exit_flag:
-                if node_score[element] == 0:
-                    return [element], True
-                elif node_score[element] == current_score-1:
-                    whitelist.append(element)
+            score_list.append(node_score[element])
+
+        best_score = np.amin(score_list)
+
+        if best_score == 0.0:
+            return [element], True
+
+        if best_score >= current_score:
+            raise ValueError
+
+        whitelist = []
+        best_node = node_connectivity[current_node][np.argmin(score_list)]
+        whitelist.append(best_node)
+
+        # for element in node_connectivity[current_node]:
+        #     if not exit_flag:
+        #         if node_score[element] == 0:
+        #             return [element], True
+        #         elif node_score[element] == current_score-1:
+        #             whitelist.append(element)
 
         if len(whitelist) == 1:
 
-            optimal_path, exit_flag = get_optimal_path(current_score-1,whitelist[0],node_connectivity,node_score,optimal_path,position_data,target_node,exit_flag)
+            optimal_path, exit_flag = get_optimal_path(best_score,whitelist[0],node_connectivity,node_score,optimal_path,position_data,target_node,exit_flag)
             if exit_flag:
                 optimal_path.append(whitelist[0])
 
@@ -242,7 +290,7 @@ def a_star_search(start_node,target_node,node_connectivity,position_data,upper_l
                 distances.append(dist)
             min_whitelist = np.argmin(distances)
 
-            optimal_path, exit_flag = get_optimal_path(current_score-1,whitelist[min_whitelist],node_connectivity,node_score,optimal_path,position_data,target_node,exit_flag)
+            optimal_path, exit_flag = get_optimal_path(best_score,whitelist[min_whitelist],node_connectivity,node_score,optimal_path,position_data,target_node,exit_flag)
             if exit_flag:
                 optimal_path.append(whitelist[min_whitelist])
 
@@ -250,6 +298,9 @@ def a_star_search(start_node,target_node,node_connectivity,position_data,upper_l
 
     optimal_path = get_optimal_path(current_score,target_node,node_connectivity,node_score,[target_node],position_data,start_node)[0]
     optimal_path.append(target_node)
+
+    if optimal_path[0] == optimal_path[1]:
+        raise ValueError
 
     return optimal_path
 
@@ -308,7 +359,7 @@ def path_spatial_length(path,position_data,direction):
 
     return path_length
 
-def process_laminarity(leading_edge,trailing_edge,su2_data,span_direction,chord_direction,leading_span,max_nlf,banned_span,efficiency,max_node_num,root_span,leading_edge_spline,trailing_edge_spline,node_list,correction_efficiencies,laminar_spline_cf,turbulent_spline_cf,laminar_spline_cp,turbulent_spline_cp,element_tree,edge_list,lower_or_upper):
+def process_laminarity(leading_edge,trailing_edge,su2_data,span_direction,chord_direction,leading_span,max_nlf,banned_span,efficiency,max_node_num,root_span,leading_edge_spline,trailing_edge_spline,node_list,laminar_spline_cf,turbulent_spline_cf,laminar_spline_cp,turbulent_spline_cp,element_tree,edge_list,lower_or_upper):
 
     output_data = np.zeros((max_node_num,12))
     counter = 0
@@ -408,7 +459,7 @@ def get_surface_path_list(leading_edge,trailing_edge,node_connectivity,position_
     surface_paths = [[] for _ in range(len(leading_edge))]
 
     for a in range(np.min([len(leading_edge),len(trailing_edge)])):
-        surface_paths[a] = a_star_search(leading_edge[a],trailing_edge[a],node_connectivity,position_data,upper_lower_direction,-lower_surface_direction,upper_lower_boundary,set())
+        surface_paths[a] = a_star_search(leading_edge[a],trailing_edge[a],node_connectivity,position_data,upper_lower_direction,lower_surface_direction,upper_lower_boundary,set())
 
     return surface_paths
 
@@ -441,6 +492,8 @@ def read_csv_as_list(the_filepath):
 
     for a in range(len(file_data)):
         the_list[a] = re.split(',',file_data[a])
+        for b in range(len(the_list[a])):
+            the_list[a][b] = int(the_list[a][b])
 
     return the_list
 
@@ -589,12 +642,12 @@ def mirrored_shifted_sigmoid(x,width,ban_list):
 
     return output
 
-def load_CF_corrections(max_nlf_lower,max_nlf_upper):
+def load_CF_corrections(max_nlf_lower,max_nlf_upper,root_filepath,laminar_lower_filename,laminar_upper_filename,turbulent_lower_filename,turbulent_upper_filename):
 
-    laminar_lower_filename = 'C:/Users/[redacted]/Laminar_Regions/laminar_lower.mses'
-    laminar_upper_filename = 'C:/Users/[redacted]/Laminar_Regions/laminar_upper.mses'
-    turbulent_lower_filename = 'C:/Users/[redacted]/Laminar_Regions/turbulent_lower.mses'
-    turbulent_upper_filename = 'C:/Users/[redacted]/Laminar_Regions/turbulent_upper.mses'
+    laminar_upper_filepath = root_filepath+laminar_lower_filename
+    laminar_lower_filepath = root_filepath+laminar_upper_filename
+    turbulent_lower_filepath = root_filepath+turbulent_lower_filename
+    turbulent_upper_filepath = root_filepath+turbulent_upper_filename
 
     #Remove double-spaces so numpy can read it easily
     for filename in [laminar_lower_filename,laminar_upper_filename,turbulent_lower_filename,turbulent_upper_filename]:
@@ -774,7 +827,7 @@ def calculate_coefficients():
     paraview.simple._DisableFirstRenderCameraReset()
 
     # create a new 'Legacy VTK Reader'
-    wingvtk = LegacyVTKReader(registrationName='wing.vtk', FileNames=['C:\\Users\\[redacted]\\Laminar_Regions\\HDMR\\wing.vtk'])
+    wingvtk = LegacyVTKReader(registrationName='wing.vtk', FileNames=['C:\\[redacted]\\Laminar_Regions\\HDMR\\wing.vtk'])
 
     UpdatePipeline(time=0.0, proxy=wingvtk)
 
@@ -969,13 +1022,13 @@ def calculate_coefficients():
 
 def laminar_sensitivity_function(x):
 
+    #Defunct as of this commit, however only the variables put into main() need to be changed
+
     banned_span = np.zeros((4,2))
     banned_span[0,:] = [0.,(0.02+x[0])]
     banned_span[1,:] = [0.2+x[1],0.25+x[2]]
     banned_span[2,:] = [0.45+x[3],0.48+x[4]]
     banned_span[3,:] = [0.98+x[5],1]
-
-    correction_efficiencies = [0,1]
 
     efficiency_lower = x[6]
     efficiency_upper = x[7]
@@ -983,27 +1036,78 @@ def laminar_sensitivity_function(x):
     span_direction = [0,1,0]
     chord_direction = [1,0,0]
 
-    su2_filename = 'C:/Users/[redacted]/Laminar_Regions/example_su2_input.csv'
+    su2_filename = 'C:/[redacted]/Laminar_Regions/example_su2_input.csv'
 
-    main('C:/Users/[redacted]/Laminar_Regions/mrsbw-V-BASE-newBL.su2',1,136218,4,136222,22500,158565,'wing',span_direction,chord_direction,0.6321,0.6739,efficiency_lower,efficiency_upper,banned_span,True,True,correction_efficiencies,su2_filename)
+    main('C:/[redacted]/Laminar_Regions/mrsbw-V-BASE-newBL.su2',1,136218,4,136222,22500,158565,'wing',span_direction,chord_direction,0.6321,0.6739,efficiency_lower,efficiency_upper,banned_span,True,True,su2_filename)
     CL, CD = calculate_coefficients()
 
     return CL
 
-banned_span = np.zeros((4,2))
-banned_span[0,:] = [0.,0.03]
-banned_span[1,:] = [0.2,0.25]
-banned_span[2,:] = [0.45,0.48]
-banned_span[3,:] = [0.96,1]
+def razor_corrections_interface(root_filepath,snapshot_filename,MSES_transition_lower,MSES_transition_upper,laminar_lower_filename,laminar_upper_filename,turbulent_lower_filename,turbulent_upper_filename,razor_out_filename,output_vtk_instead_of_csv):
 
-correction_efficiencies = [0,1]
+    #root folder filepath: all additional filepaths will append to the root filepath
 
-efficiency_lower = 0.5
-efficiency_upper = 0.5
+    #snapshot filename: path relative to root_folder_filepath that points to the snapshot
 
-span_direction = [0,1,0]
-chord_direction = [1,0,0]
+    #MSES_transition_lower/upper: These are the transition points identified in the MSES solutions
+    #For 0 deg the values should be: 0.6508,0.1637
+    #5 deg: 0.3835, 0.7077
+    #2.5 deg: 0.472, 0.678
+    #-5 deg: 0.7385, 0.1806
 
-su2_filename = 'example_su2_input.csv'
+    #laminar/turbulent lower/upper filename: These are the paths relative to the root filepath for the MSES solutions for a given AOA
 
-main('mrsbw-V-BASE-newBL.su2',1,136218,4,136222,22500,158565,'wing',span_direction,chord_direction,0.6321,0.6739,efficiency_lower,efficiency_upper,banned_span,True,True,correction_efficiencies,su2_filename)
+    #razor_out_filename: the path relative to the root filepath for the (unsorted) output csv
+
+    #output_vtk_instead_of_csv: self-explanatory variable name. WARNING: this will use razor_out_filename
+
+    #Areas of the span with fully turbulent flow
+    banned_span = np.zeros((4,2))
+    banned_span[0,:] = [0.,0.03]
+    banned_span[1,:] = [0.2,0.25]
+    banned_span[2,:] = [0.45,0.48]
+    banned_span[3,:] = [0.96,1]
+
+    #Always 1
+    efficiency_lower = 1.0
+    efficiency_upper = 1.0
+
+    #Used to transform coordinates into the corresponding directions
+    span_direction = [0,1,0]
+    chord_direction = [1,0,0]
+
+    #If the node IDs need to be regenerated, use this su2 file...
+    su2_mesh_file = 'mrsbw-V-0_WT.su2'
+    #...and check the following node IDs are correct...
+    root_leading_edge_ID = 1
+    tip_leading_edge_ID = 136218
+    root_lower_trailing_edge_ID = 4
+    tip_lower_trailing_edge_ID = 136222
+    root_upper_trailing_edge_ID = 22500
+    tip_upper_trailing_edge_ID = 158565
+    #...and that this wing marker is correct...
+    wing_marker_tag = 'wing'
+    #...and set this to false so it knows to regenerate them
+    get_paths_from_csv = True
+
+    #If for some reason, you want the node positions to come from the su2 mesh rather than the csv, set this to false
+    get_pos_from_csv = True
+
+    main(su2_mesh_file,root_leading_edge_ID,tip_leading_edge_ID,root_lower_trailing_edge_ID,tip_lower_trailing_edge_ID,root_upper_trailing_edge_ID,tip_upper_trailing_edge_ID,wing_marker_tag,span_direction,chord_direction,MSES_transition_lower,MSES_transition_upper,efficiency_lower,efficiency_upper,banned_span,get_paths_from_csv,get_pos_from_csv,snapshot_filename,root_filepath,laminar_lower_filename,laminar_upper_filename,turbulent_lower_filename,turbulent_upper_filename,razor_out_filename,output_vtk_instead_of_csv)
+
+    return
+
+# sys.setrecursionlimit(10**6)
+
+root_folder_filepath = 'C:/[redacted]/Laminar_Regions/'
+snapshot_filename = 'sol_wing_00000_0.0.csv'
+MSES_transition_lower = 0.6321
+MSES_transition_upper = 0.6739
+laminar_lower_filename = '0_laminar_lower.mses'
+laminar_upper_filename = '0_laminar_upper.mses'
+turbulent_lower_filename = '0_turbulent_lower.mses'
+turbulent_upper_filename = '0_turbulent_upper.mses'
+razor_out_filename = 'good_naming_convention.vtk'
+output_vtk_instead_of_csv = True
+
+razor_corrections_interface(root_folder_filepath,snapshot_filename,MSES_transition_lower,MSES_transition_upper,laminar_lower_filename,laminar_upper_filename,turbulent_lower_filename,turbulent_upper_filename,razor_out_filename,output_vtk_instead_of_csv)
