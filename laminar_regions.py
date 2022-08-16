@@ -66,18 +66,6 @@ def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_t
         save_list_as_csv(lower_pathlist,root_filepath+'lower_nodes.csv')
         save_list_as_csv(upper_pathlist,root_filepath+'upper_nodes.csv')
 
-    # flattened_list = []
-    # for row in lower_pathlist:
-    #     for element in row:
-    #         flattened_list.append(element)
-    # np.savetxt('lower_test.csv',su2_data[flattened_list,:],delimiter=',')
-    # flattened_list = []
-    # for row in upper_pathlist:
-    #     for element in row:
-    #         flattened_list.append(element)
-    # np.savetxt('upper_test.csv',su2_data[flattened_list,:],delimiter=',')
-    # raise ValueError
-
     lower_set = set()
     upper_set = set()
 
@@ -98,14 +86,6 @@ def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_t
 
     print('generated element tree')
 
-    # print('Lower pathlist lengths')
-    # for a in range(len(lower_pathlist)):
-    #     print(len(lower_pathlist[a]))
-    #
-    # print('Upper pathlist lengths')
-    # for a in range(len(upper_pathlist)):
-    #     print(len(upper_pathlist[a]))
-
     leading_edge_span_length = path_spatial_length(leading_edge,position_data,span_direction)
     trailing_edge_lower_span_length = path_spatial_length(trailing_edge_lower,position_data,span_direction)
     trailing_edge_upper_span_length = path_spatial_length(trailing_edge_upper,position_data,span_direction)
@@ -125,10 +105,6 @@ def main(su2_mesh_filepath,root_leading_edge_ID,tip_leading_edge_ID,root_lower_t
     print('leading edge chord length: '+str(leading_edge_chord_length[-1]-leading_edge_chord_length[0]))
     print('trailing edge lower chord length: '+str(trailing_edge_lower_chord_length[-1]-trailing_edge_lower_chord_length[0]))
     print('trailing edge upper chord length: '+str(trailing_edge_upper_chord_length[-1]-trailing_edge_upper_chord_length[0]))
-
-    print(leading_edge_span_length)
-    print(leading_edge_chord_length)
-    raise ValueError
 
     leading_edge_spline = CubicSpline(leading_edge_span_length, leading_edge_chord_length, axis=0)
     trailing_edge_lower_spline = CubicSpline(trailing_edge_lower_span_length, trailing_edge_lower_chord_length, axis=0)
@@ -258,15 +234,15 @@ def a_star_search(start_node,target_node,node_connectivity,position_data,upper_l
             score_list.append(node_score[element])
 
         best_score = np.amin(score_list)
+        best_node = node_connectivity[current_node][np.argmin(score_list)]
 
         if best_score == 0.0:
-            return [element], True
+            return [best_node], True
 
         if best_score >= current_score:
             raise ValueError
 
         whitelist = []
-        best_node = node_connectivity[current_node][np.argmin(score_list)]
         whitelist.append(best_node)
 
         # for element in node_connectivity[current_node]:
@@ -393,8 +369,15 @@ def process_laminarity(leading_edge,trailing_edge,su2_data,span_direction,chord_
 
                 if percent_chord < percent_transition:
 
-                    corrected_friction = current_friction * laminar_spline_cf(percent_chord) / turbulent_spline_cf(percent_chord)
-                    corrected_pressure = current_pressure * laminar_spline_cp(percent_chord) / turbulent_spline_cp(percent_chord)
+                    if percent_chord < 0.02:
+
+                        corrected_friction = current_friction*(1.-(percent_chord*50.)) + current_friction*percent_chord*50.*laminar_spline_cf(0.02) / turbulent_spline_cf(0.02)
+                        corrected_pressure = current_pressure*(1.-(percent_chord*50.)) + current_pressure*percent_chord*50.*laminar_spline_cp(0.02) / turbulent_spline_cp(0.02)
+
+                    else:
+
+                        corrected_friction = current_friction * laminar_spline_cf(percent_chord) / turbulent_spline_cf(percent_chord)
+                        corrected_pressure = current_pressure * laminar_spline_cp(percent_chord) / turbulent_spline_cp(percent_chord)
 
                 else:
 
@@ -1087,7 +1070,7 @@ def razor_corrections_interface(root_filepath,snapshot_filename,MSES_transition_
     tip_upper_trailing_edge_ID = 158565
     #...and that this wing marker is correct...
     wing_marker_tag = 'wing'
-    #...and set this to false so it knows to regenerate them
+    #...and set this to False so it knows to regenerate them
     get_paths_from_csv = True
 
     #If for some reason, you want the node positions to come from the su2 mesh rather than the csv, set this to false
@@ -1097,12 +1080,10 @@ def razor_corrections_interface(root_filepath,snapshot_filename,MSES_transition_
 
     return
 
-# sys.setrecursionlimit(10**6)
-
 root_folder_filepath = 'C:/[redacted]/Laminar_Regions/'
-snapshot_filename = 'sol_wing_00000_0.0.csv'
-MSES_transition_lower = 0.6321
-MSES_transition_upper = 0.6739
+snapshot_filename = 'sol_wing_00127_0.0.csv'
+MSES_transition_lower = 0.6508
+MSES_transition_upper = 0.1637
 laminar_lower_filename = '0_laminar_lower.mses'
 laminar_upper_filename = '0_laminar_upper.mses'
 turbulent_lower_filename = '0_turbulent_lower.mses'
