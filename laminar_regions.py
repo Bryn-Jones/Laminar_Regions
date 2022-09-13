@@ -798,7 +798,7 @@ def interpolate_field_values(su2_data,which_fields,element_tree,edge_list,the_po
     for a in range(len(which_fields)):
         cumsum = 0.
         for b in range(len(edge_list[closest_element,:])):
-            cumsum += su2_data[int(edge_list[closest_element,a]),which_fields[a]]*distances[b]
+            cumsum += su2_data[int(edge_list[closest_element,b]),which_fields[a]]*distances[b]
         interpolated_field_values[a] = cumsum
 
     return interpolated_field_values
