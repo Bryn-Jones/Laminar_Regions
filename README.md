@@ -1,7 +1,11 @@
 # Laminar_Regions
 
-Create metadata for su2 (structured) mesh points that identifies to what extent they belong to a "laminar flow region".
+Three-dimensional laminar corrections module for the RHEA project.
 
-The mesh is divided up spanwise by the user in order to identify areas where "three-dimensional effects" cause fully turbulent flow. Betwixt these regions are "laminar flow regions". The mesh points in these regions will then be given a number from 0 to 1 indicating how close (distance) to the leading edge from the trailing edge they are, allowing for arbitrary laminar transition points to be chosen.
+"Lamiar regions" are defined in terms of upper/lower surface chordwise transition points, and spanwise "turbulence regions" caused by three-dimensional effects.
 
-The code now also takes in csv files pertaining to updated node positions, field data (e.g. Cp), and 2D simulations, and can write corrected data to a VTK file based on the interpolation of the 2D simulation parameters.
+A structured su2 mesh is combined with an a-star search method to identify the nodes belonging to certain groups: leading edge, upper trailing edge, lower trailing edge, upper surface, and lower surface.
+
+A "snapshot" su2 result file is read, whose node IDs correspond to the same ones on the su2 mesh (but not necessarily the same node coordinates). Then, every node in the upper/lower surface groups is given a correction if inside a laminar region, based on a correction factor provided by the ratio of two two-dimensional analyses, one free transition, and the other fully turbulent. Cubic splines (scipy) are used to interpolate the edges and the two-dimensional data.
+
+Additionally, the edges of the corrected regions are smoothed via sigmoid functions with fixed end points based on a linear interpolation of the full surface solution at either end. The linear interpolator uses a tree data structure to find the nearest nodes to a given point in space. Any nodes not identified as belonging to a surface, or not inside a laminar region or smoothing region, will simply have the snapshot data copied directly over.
