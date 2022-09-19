@@ -771,8 +771,9 @@ def interpolate_field_values(su2_data,which_fields,element_tree,edge_list,the_po
 
     closest_element, _ = element_tree.get_nearest_element(extended_point,correct_Z,which_set)
 
-
     if correct_Z:
+        corrected_point[0:2] = the_point.copy()
+
         for element in edge_list[closest_element,:]:
             corrected_point[2] += su2_data[int(element),3]
 
